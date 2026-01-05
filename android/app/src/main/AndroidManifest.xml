@@ -11,7 +11,12 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.CAMERA" />
-    
+    <!-- 非强制声明，帮助系统识别相机能力 -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+        <!-- 如果有 USB 摄像头 -->
+    <uses-feature android:name="android.hardware.usb.host" />
+    <uses-feature android:name="android.hardware.usb.accessory" />
     <application
         android:label="AI-LHHT"
         android:name="${applicationName}"

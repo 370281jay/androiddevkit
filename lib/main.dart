@@ -23,6 +23,10 @@ const bool enableDebugTools = true;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
 
   // 设置全局沉浸式导航栏
   await _setupSystemUI();

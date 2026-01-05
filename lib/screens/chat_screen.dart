@@ -19,6 +19,7 @@ import 'package:ai_assistant/services/xiaozhi_service.dart';
 import 'package:ai_assistant/providers/config_provider.dart';
 import 'package:ai_assistant/widgets/message_bubble.dart';
 import 'package:ai_assistant/screens/voice_call_screen.dart';
+import 'package:ai_assistant/widgets/camera_pane.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -49,6 +50,9 @@ class _ChatScreenState extends State<ChatScreen> {
   double _minWaveHeight = 5.0;
   double _maxWaveHeight = 30.0;
   final math.Random _random = math.Random();
+
+  bool _showCameraPane = false;
+  double _cameraRotation = 0;
 
   @override
   void initState() {
@@ -114,6 +118,12 @@ class _ChatScreenState extends State<ChatScreen> {
       } else if (widget.conversation.type == ConversationType.dify) {
         // 初始化 DifyService
         _initDifyService();
+      }
+
+      // 进入聊天后，若为横屏则自动显示右侧摄像头
+      final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+      if (isLandscape && mounted) {
+        setState(() => _showCameraPane = true);
       }
     });
   }
@@ -279,224 +289,263 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 1,
-        toolbarHeight: 70,
-        systemOverlayStyle: const SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          statusBarIconBrightness: Brightness.dark,
-          statusBarBrightness: Brightness.light,
-        ),
-        actions: [
-          if (widget.conversation.type == ConversationType.dify)
-            IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.black, size: 24),
-              tooltip: '开始新对话',
-              onPressed: _resetConversation,
-            ),
-          if (widget.conversation.type == ConversationType.xiaozhi)
-            Container(
-              margin: const EdgeInsets.only(right: 12),
-              decoration: BoxDecoration(
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
-                child: InkWell(
-                  onTap: _navigateToVoiceCall,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(Icons.phone, color: Colors.black, size: 16),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black, size: 26),
-          onPressed: () {
-            // 返回前停止播放
-            if (_xiaozhiService != null) {
-              _xiaozhiService!.stopPlayback();
-            }
-            Navigator.of(context).pop();
-          },
-        ),
-        title:
-            widget.conversation.type == ConversationType.xiaozhi
-                ? Row(
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.3),
-                            blurRadius: 8,
-                            spreadRadius: 0,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: CircleAvatar(
-                        radius: 20,
-                        backgroundColor: Colors.grey.shade700,
-                        child: const Icon(
-                          Icons.mic,
-                          color: Colors.white,
-                          size: 22,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.conversation.title,
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade200,
-                            borderRadius: BorderRadius.circular(10),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.03),
-                                blurRadius: 1,
-                                spreadRadius: 0,
-                                offset: const Offset(0, 1),
-                              ),
-                            ],
-                          ),
-                          child: const Text(
-                            '语音',
-                            style: TextStyle(color: Colors.grey, fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                )
-                : Consumer<ConfigProvider>(
-                  builder: (context, configProvider, child) {
-                    // 查找此会话对应的Dify配置
-                    final String? configId = widget.conversation.configId;
-                    String configName = widget.conversation.title;
+       backgroundColor: Colors.white,
+       appBar: AppBar(
+         backgroundColor: Colors.white,
+         elevation: 1,
+         toolbarHeight: 70,
+         systemOverlayStyle: const SystemUiOverlayStyle(
+           statusBarColor: Colors.transparent,
+           statusBarIconBrightness: Brightness.dark,
+           statusBarBrightness: Brightness.light,
+         ),
+         actions: [
+           if (widget.conversation.type == ConversationType.dify)
+             IconButton(
+               icon: const Icon(Icons.refresh, color: Colors.black, size: 24),
+               tooltip: '开始新对话',
+               onPressed: _resetConversation,
+             ),
+           if (widget.conversation.type == ConversationType.xiaozhi)
+             Container(
+               margin: const EdgeInsets.only(right: 12),
+               decoration: BoxDecoration(
+                 color: Colors.transparent,
+                 borderRadius: BorderRadius.circular(12),
+               ),
+               child: Material(
+                 color: Colors.transparent,
+                 borderRadius: BorderRadius.circular(12),
+                 child: InkWell(
+                   onTap: _navigateToVoiceCall,
+                   borderRadius: BorderRadius.circular(12),
+                   child: Container(
+                     padding: const EdgeInsets.symmetric(
+                       horizontal: 12,
+                       vertical: 8,
+                     ),
+                     child: Container(
+                       padding: const EdgeInsets.all(4),
+                       decoration: BoxDecoration(
+                         color: Colors.grey.shade300,
+                         borderRadius: BorderRadius.circular(8),
+                       ),
+                       child: Icon(Icons.phone, color: Colors.black, size: 16),
+                     ),
+                   ),
+                 ),
+               ),
+             ),
+         ],
+         leading: IconButton(
+           icon: const Icon(Icons.arrow_back, color: Colors.black, size: 26),
+           onPressed: () {
+             // 返回前停止播放
+             if (_xiaozhiService != null) {
+               _xiaozhiService!.stopPlayback();
+             }
+             Navigator.of(context).pop();
+           },
+         ),
+         title:
+             widget.conversation.type == ConversationType.xiaozhi
+                 ? Row(
+                   children: [
+                     Container(
+                       decoration: BoxDecoration(
+                         shape: BoxShape.circle,
+                         boxShadow: [
+                           BoxShadow(
+                             color: Colors.grey.withOpacity(0.3),
+                             blurRadius: 8,
+                             spreadRadius: 0,
+                             offset: const Offset(0, 3),
+                           ),
+                         ],
+                       ),
+                       child: CircleAvatar(
+                         radius: 20,
+                         backgroundColor: Colors.grey.shade700,
+                         child: const Icon(
+                           Icons.mic,
+                           color: Colors.white,
+                           size: 22,
+                         ),
+                       ),
+                     ),
+                     const SizedBox(width: 12),
+                     Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         Text(
+                           widget.conversation.title,
+                           style: const TextStyle(
+                             color: Colors.black,
+                             fontWeight: FontWeight.bold,
+                             fontSize: 18,
+                           ),
+                         ),
+                         Container(
+                           padding: const EdgeInsets.symmetric(
+                             horizontal: 8,
+                             vertical: 2,
+                           ),
+                           decoration: BoxDecoration(
+                             color: Colors.grey.shade200,
+                             borderRadius: BorderRadius.circular(10),
+                             boxShadow: [
+                               BoxShadow(
+                                 color: Colors.black.withOpacity(0.03),
+                                 blurRadius: 1,
+                                 spreadRadius: 0,
+                                 offset: const Offset(0, 1),
+                               ),
+                             ],
+                           ),
+                           child: const Text(
+                             '语音',
+                             style: TextStyle(color: Colors.grey, fontSize: 12),
+                           ),
+                         ),
+                       ],
+                     ),
+                   ],
+                 )
+                 : Consumer<ConfigProvider>(
+                   builder: (context, configProvider, child) {
+                     // 查找此会话对应的Dify配置
+                     final String? configId = widget.conversation.configId;
+                     String configName = widget.conversation.title;
 
-                    // 如果配置ID存在，则从中获取名称
-                    if (configId != null && configId.isNotEmpty) {
-                      final difyConfig =
-                          configProvider.difyConfigs
-                              .where((config) => config.id == configId)
-                              .firstOrNull;
+                     // 如果配置ID存在，则从中获取名称
+                     if (configId != null && configId.isNotEmpty) {
+                       final difyConfig =
+                           configProvider.difyConfigs
+                               .where((config) => config.id == configId)
+                               .firstOrNull;
 
-                      if (difyConfig != null) {
-                        configName = difyConfig.name;
-                      }
-                    }
+                       if (difyConfig != null) {
+                         configName = difyConfig.name;
+                       }
+                     }
 
-                    return Row(
-                      children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.blue.withOpacity(0.3),
-                                blurRadius: 8,
-                                spreadRadius: 0,
-                                offset: const Offset(0, 3),
-                              ),
-                            ],
-                          ),
-                          child: CircleAvatar(
-                            radius: 20,
-                            backgroundColor: Colors.blue.shade400,
-                            child: const Icon(
-                              Icons.chat_bubble_outline,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              configName,
-                              style: const TextStyle(
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.shade50,
-                                borderRadius: BorderRadius.circular(10),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.03),
-                                    blurRadius: 1,
-                                    spreadRadius: 0,
-                                    offset: const Offset(0, 1),
-                                  ),
-                                ],
-                              ),
-                              child: const Text(
-                                '文本',
-                                style: TextStyle(
-                                  color: Colors.blue,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    );
-                  },
-                ),
-      ),
-      body: Column(
-        children: [
-          if (widget.conversation.type == ConversationType.xiaozhi)
-            _buildXiaozhiInfo(),
-          Expanded(child: _buildMessageList()),
-          _buildInputArea(),
-        ],
-      ),
-    );
+                     return Row(
+                       children: [
+                         Container(
+                           decoration: BoxDecoration(
+                             shape: BoxShape.circle,
+                             boxShadow: [
+                               BoxShadow(
+                                 color: Colors.blue.withOpacity(0.3),
+                                 blurRadius: 8,
+                                 spreadRadius: 0,
+                                 offset: const Offset(0, 3),
+                               ),
+                             ],
+                           ),
+                           child: CircleAvatar(
+                             radius: 20,
+                             backgroundColor: Colors.blue.shade400,
+                             child: const Icon(
+                               Icons.chat_bubble_outline,
+                               color: Colors.white,
+                               size: 20,
+                             ),
+                           ),
+                         ),
+                         const SizedBox(width: 12),
+                         Column(
+                           crossAxisAlignment: CrossAxisAlignment.start,
+                           children: [
+                             Text(
+                               configName,
+                               style: const TextStyle(
+                                 color: Colors.black,
+                                 fontWeight: FontWeight.bold,
+                                 fontSize: 18,
+                               ),
+                             ),
+                             Container(
+                               padding: const EdgeInsets.symmetric(
+                                 horizontal: 8,
+                                 vertical: 2,
+                               ),
+                               decoration: BoxDecoration(
+                                 color: Colors.blue.shade50,
+                                 borderRadius: BorderRadius.circular(10),
+                                 boxShadow: [
+                                   BoxShadow(
+                                     color: Colors.black.withOpacity(0.03),
+                                     blurRadius: 1,
+                                     spreadRadius: 0,
+                                     offset: const Offset(0, 1),
+                                   ),
+                                 ],
+                               ),
+                               child: const Text(
+                                 '文本',
+                                 style: TextStyle(
+                                   color: Colors.blue,
+                                   fontSize: 12,
+                                 ),
+                               ),
+                             ),
+                           ],
+                         ),
+                       ],
+                     );
+                   },
+                 ),
+       ),
+
+       body: _buildResponsiveBody(),
+     );
   }
+
+   Widget _buildResponsiveBody() {
+     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+     if (!isLandscape) {
+       // 竖屏：原布局
+       return Column(
+         children: [
+           if (widget.conversation.type == ConversationType.xiaozhi) _buildXiaozhiInfo(),
+           Expanded(child: _buildMessageList()),
+           _buildInputArea(),
+         ],
+       );
+     }
+     // 横屏：左侧聊天(1/3)，右侧摄像头(2/3)
+     return Row(
+       children: [
+         Expanded(
+           flex: 1,
+           child: Column(
+            children: [
+               if (widget.conversation.type == ConversationType.xiaozhi) _buildXiaozhiInfo(),
+               Expanded(child: _buildMessageList()),
+               _buildInputArea(),
+             ],
+           ),
+         ),
+         Container(width: 1, color: Colors.grey.withOpacity(0.2)),
+         Expanded(
+           flex: 2,
+           child: _showCameraPane
+               ? CameraPane(rotationDegrees: _cameraRotation)
+               : _buildRightPlaceholder(),
+         ),
+      ],
+     );
+   }
+ 
+   Widget _buildRightPlaceholder() {
+     return Center(
+       child: Text(
+         '摄像头未开启',
+         style: TextStyle(color: Colors.grey.shade400, fontSize: 16),
+       ),
+     );
+   }
 
   Widget _buildXiaozhiInfo() {
     final configProvider = Provider.of<ConfigProvider>(context);
