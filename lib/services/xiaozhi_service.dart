@@ -48,7 +48,15 @@ class XiaozhiService {
   final String macAddress;
   final String token;
   String? _sessionId; // 会话ID将由服务器提供
-
+  /// 获取当前使用的认证token（与WebSocket连接保持一致）
+  String getAuthToken() {
+    if (token.isNotEmpty) {
+      return token;
+    } else {
+      // 使用设备ID作为默认token
+      return macAddress.isNotEmpty ? macAddress : 'unknown-device';
+    }
+  }
   XiaozhiWebSocketManager? _webSocketManager;
   bool _isConnected = false;
   bool _isMuted = false;

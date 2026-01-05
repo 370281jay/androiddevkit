@@ -104,8 +104,10 @@ class XiaozhiWebSocketManager {
           headers['Authorization'] = 'Bearer $token';
           print('$TAG: 添加Authorization头: Bearer $token');
         } else {
-          headers['Authorization'] = 'Bearer test-token';
-          print('$TAG: 添加默认Authorization头: Bearer test-token');
+          // 如果没有提供token或token为空，使用设备ID作为默认token
+          final defaultToken = _deviceId ?? 'unknown-device';
+          headers['Authorization'] = 'Bearer $defaultToken';
+          print('$TAG: 添加默认Authorization头: Bearer $defaultToken');
         }
 
         // 使用IOWebSocketChannel并传递headers

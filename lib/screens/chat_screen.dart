@@ -1804,11 +1804,11 @@ class _ChatScreenState extends State<ChatScreen> {
         (c) => c.id == widget.conversation.configId,
       );
 
-      // 视觉服务调用（注意替换 visionUrl 为你的实际路由）
+      // 视觉服务调用，使用与WebSocket相同的token
       final vs = VisionService(
-        visionUrl: 'http://183.251.85.225:8003/mcp/vision/explain', // TODO: 替换为实际 VisionHandler 路径
-        authToken: xiaozhiConfig.token,     // 复用小智 Token
-        deviceId: xiaozhiConfig.macAddress, // 复用设备ID（与 Token 中绑定一致）
+        visionUrl: 'http://183.251.85.225:8003/mcp/vision/explain',
+        authToken: _xiaozhiService!.getAuthToken(),  // 使用XiaozhiService的token获取方法
+        deviceId: xiaozhiConfig.macAddress,
         clientId: 'android-client',
       );
 
@@ -1817,15 +1817,32 @@ class _ChatScreenState extends State<ChatScreen> {
         question: '请识别这张图片的内容',
       );
 
+      // 对返回的文本进行Unicode解码处理
+      String decodedResponse = _decodeUnicodeString(responseText);
+
       // 插入助手消息
       await conversationProvider.addMessage(
         conversationId: widget.conversation.id,
         role: MessageRole.assistant,
-        content: responseText,
+        content: decodedResponse,  // 使用解码后的文本
       );
       _scrollToBottom();
     } catch (e) {
       _showCustomSnackbar('图片识别失败: $e');
     }
+  }
+  
+  // Unicode解码处理
+  String _decodeUnicodeString(String input) {
+    StringBuffer result = StringBuffer();
+    RegExp exp = RegExp(r'\\u([0-9a-fA-F]{4})');
+
+    input.replaceAllMapped(exp, (Match match) {
+      int codePoint = int.parse(match[1]!, radix: 16);
+      result.write(String.fromCharCode(codePoint));
+      return '';
+    });
+
+    return result.toString();
   }
 }
