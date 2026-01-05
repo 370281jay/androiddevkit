@@ -1,0 +1,105 @@
+PODS:
+  - audio_session (0.0.1):
+    - Flutter
+  - audio_streamer (0.0.1):
+    - Flutter
+  - device_info_plus (0.0.1):
+    - Flutter
+  - Flutter (1.0.0)
+  - flutter_blue_plus_darwin (0.0.2):
+    - Flutter
+    - FlutterMacOS
+  - flutter_pcm_player (0.0.1):
+    - Flutter
+  - flutter_sound (9.26.0):
+    - Flutter
+    - flutter_sound_core (= 9.26.0)
+  - flutter_sound_core (9.26.0)
+  - image_picker_ios (0.0.1):
+    - Flutter
+  - just_audio (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - opus_flutter_ios (0.0.2):
+    - Flutter
+  - path_provider_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - permission_handler_apple (9.3.0):
+    - Flutter
+  - record_darwin (1.0.0):
+    - Flutter
+  - shared_preferences_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
+
+DEPENDENCIES:
+  - audio_session (from `.symlinks/plugins/audio_session/ios`)
+  - audio_streamer (from `.symlinks/plugins/audio_streamer/ios`)
+  - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
+  - Flutter (from `Flutter`)
+  - flutter_blue_plus_darwin (from `.symlinks/plugins/flutter_blue_plus_darwin/darwin`)
+  - flutter_pcm_player (from `.symlinks/plugins/flutter_pcm_player/ios`)
+  - flutter_sound (from `.symlinks/plugins/flutter_sound/ios`)
+  - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
+  - just_audio (from `.symlinks/plugins/just_audio/darwin`)
+  - opus_flutter_ios (from `.symlinks/plugins/opus_flutter_ios/ios`)
+  - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
+  - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
+  - record_darwin (from `.symlinks/plugins/record_darwin/ios`)
+  - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
+
+SPEC REPOS:
+  trunk:
+    - flutter_sound_core
+
+EXTERNAL SOURCES:
+  audio_session:
+    :path: ".symlinks/plugins/audio_session/ios"
+  audio_streamer:
+    :path: ".symlinks/plugins/audio_streamer/ios"
+  device_info_plus:
+    :path: ".symlinks/plugins/device_info_plus/ios"
+  Flutter:
+    :path: Flutter
+  flutter_blue_plus_darwin:
+    :path: ".symlinks/plugins/flutter_blue_plus_darwin/darwin"
+  flutter_pcm_player:
+    :path: ".symlinks/plugins/flutter_pcm_player/ios"
+  flutter_sound:
+    :path: ".symlinks/plugins/flutter_sound/ios"
+  image_picker_ios:
+    :path: ".symlinks/plugins/image_picker_ios/ios"
+  just_audio:
+    :path: ".symlinks/plugins/just_audio/darwin"
+  opus_flutter_ios:
+    :path: ".symlinks/plugins/opus_flutter_ios/ios"
+  path_provider_foundation:
+    :path: ".symlinks/plugins/path_provider_foundation/darwin"
+  permission_handler_apple:
+    :path: ".symlinks/plugins/permission_handler_apple/ios"
+  record_darwin:
+    :path: ".symlinks/plugins/record_darwin/ios"
+  shared_preferences_foundation:
+    :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
+
+SPEC CHECKSUMS:
+  audio_session: 9bb7f6c970f21241b19f5a3658097ae459681ba0
+  audio_streamer: 2e472b9f81cec5e381c4cf7667afa3055dcb45a4
+  device_info_plus: 71ffc6ab7634ade6267c7a93088ed7e4f74e5896
+  Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
+  flutter_blue_plus_darwin: 09444a26fb6bdef523e55b68fc1c59af5a877ea6
+  flutter_pcm_player: ecac44cb13707ee54eb4e31252717e36acb29272
+  flutter_sound: 52bc351d9035fede9085cbf99c296c62897ceadd
+  flutter_sound_core: 938c91404747d79bf14a0c85b90a5d95ed7ed5c4
+  image_picker_ios: 7fe1ff8e34c1790d6fff70a32484959f563a928a
+  just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed
+  opus_flutter_ios: 6c80747e297077787910a39146d698a15a37c82a
+  path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
+  permission_handler_apple: 4ed2196e43d0651e8ff7ca3483a069d469701f2d
+  record_darwin: fb1f375f1d9603714f55b8708a903bbb91ffdb0a
+  shared_preferences_foundation: 9e1978ff2562383bd5676f64ec4e9aa8fa06a6f7
+
+PODFILE CHECKSUM: baad53a87ac96e6e789f3fa7a615a8354ef9f76d
+
+COCOAPODS: 1.16.2

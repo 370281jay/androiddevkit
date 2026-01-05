@@ -1,0 +1,160 @@
+name: Flutter Multi-Platform Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:  # 允许手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.2'
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+        
+      - name: Fix PCM Player Plugin Info (使用正确的包名)
+        run: |
+          echo "Checking PCM Player Plugin:"
+          PCM_GRADLE_FILE="/home/runner/.pub-cache/hosted/pub.dev/flutter_pcm_player-0.0.1/android/build.gradle"
+          PCM_MANIFEST_FILE="/home/runner/.pub-cache/hosted/pub.dev/flutter_pcm_player-0.0.1/android/src/main/AndroidManifest.xml"
+          
+          if [ -f "$PCM_GRADLE_FILE" ]; then
+            echo "Found build.gradle:"
+            cat "$PCM_GRADLE_FILE"
+            
+            # 检查是否已有namespace，没有则添加，使用正确的包名
+            if ! grep -q "namespace" "$PCM_GRADLE_FILE"; then
+              echo "Adding namespace to build.gradle"
+              sed -i '/android {/a \\    namespace "com.lhht.flutter_pcm_player"' "$PCM_GRADLE_FILE"
+              echo "Modified build.gradle:"
+              cat "$PCM_GRADLE_FILE"
+            else
+              echo "Namespace already exists in build.gradle, updating it"
+              # 替换为正确的包名
+              sed -i 's/namespace "com.example.flutter_pcm_player"/namespace "com.lhht.flutter_pcm_player"/' "$PCM_GRADLE_FILE"
+              echo "Modified build.gradle:"
+              cat "$PCM_GRADLE_FILE"
+            fi
+          else
+            echo "Cannot find build.gradle at $PCM_GRADLE_FILE"
+          fi
+          
+          if [ -f "$PCM_MANIFEST_FILE" ]; then
+            echo "Found AndroidManifest.xml:"
+            cat "$PCM_MANIFEST_FILE"
+            # 修改AndroidManifest.xml中的包名
+            sed -i 's/package="com.example.flutter_pcm_player"/package="com.lhht.flutter_pcm_player"/' "$PCM_MANIFEST_FILE"
+            echo "Modified AndroidManifest.xml:"
+            cat "$PCM_MANIFEST_FILE"
+          else
+            echo "Cannot find AndroidManifest.xml"
+          fi
+          
+          # 备用方法：在gradle.properties中添加命名空间
+          GRADLE_PROPS="/home/runner/.pub-cache/hosted/pub.dev/flutter_pcm_player-0.0.1/android/gradle.properties"
+          echo 'android.namespace=com.lhht.flutter_pcm_player' >> "$GRADLE_PROPS"
+          echo "Added namespace to gradle.properties:"
+          cat "$GRADLE_PROPS"
+
+      # 使用debug模式构建APK，避免R8和Play Core库依赖问题
+      - name: Build APK (Debug Mode)
+        run: flutter build apk --debug
+
+      - name: Rename APK with prefix
+        run: |
+          cd build/app/outputs/flutter-apk/
+          mv app-debug.apk lhht-app-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug
+          path: build/app/outputs/flutter-apk/lhht-app-debug.apk
+          
+  build-ios:
+    name: Build iOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.2'
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install || pod install --repo-update
+
+      # 使用最简单的方式构建iOS
+      - name: Build iOS
+        run: flutter build ios --release --no-codesign
+
+      - name: Create IPA
+        run: |
+          cd build/ios/iphoneos
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -r lhht-ai-assistant.ipa Payload/
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release
+          path: build/ios/iphoneos/lhht-ai-assistant.ipa
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-android, build-ios]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Android Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-debug
+          path: android-debug
+
+      - name: Download iOS Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-release
+          path: ios-release
+
+      - name: Get tag name
+        id: tag_name
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          token: ${{ github.token }}
+          tag_name: ${{ env.TAG_NAME }}
+          name: Release ${{ env.TAG_NAME }}
+          draft: false
+          prerelease: false
+          files: |
+            android-debug/lhht-app-debug.apk
+            ios-release/lhht-ai-assistant.ipa 
