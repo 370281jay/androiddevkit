@@ -10,6 +10,9 @@ import 'package:ai_assistant/widgets/conversation_tile.dart';
 import 'package:ai_assistant/widgets/slidable_delete_tile.dart';
 import 'package:ai_assistant/widgets/discovery_screen.dart';
 import 'package:flutter/rendering.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -109,42 +112,75 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
-        floatingActionButton:
-            _selectedIndex == 0
-                ? Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 10,
-                        spreadRadius: 0,
-                        offset: const Offset(0, 4),
-                      ),
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 20,
-                        spreadRadius: -2,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: FloatingActionButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const ConversationTypeScreen(),
+        floatingActionButton: _selectedIndex == 0
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 测试摄像头按钮（在上方）
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 10,
+                          spreadRadius: 0,
+                          offset: const Offset(0, 4),
                         ),
-                      );
-                    },
-                    backgroundColor: Colors.black,
-                    child: const Icon(Icons.add, size: 30, color: Colors.white),
-                    elevation: 0,
-                    shape: const CircleBorder(),
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 20,
+                          spreadRadius: -2,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: FloatingActionButton(
+                      onPressed: _openAndTestCamera,
+                      backgroundColor: Colors.black87,
+                      elevation: 0,
+                      shape: const CircleBorder(),
+                      child: const Icon(Icons.camera_alt, color: Colors.white),
+                    ),
                   ),
-                )
-                : null,
+                  // 原有“新建对话”按钮
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 10,
+                          spreadRadius: 0,
+                          offset: const Offset(0, 4),
+                        ),
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 20,
+                          spreadRadius: -2,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: FloatingActionButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ConversationTypeScreen(),
+                          ),
+                        );
+                      },
+                      backgroundColor: Colors.black,
+                      elevation: 0,
+                      shape: const CircleBorder(),
+                      child: const Icon(Icons.add, size: 30, color: Colors.white),
+                    ),
+                  ),
+                ],
+              )
+            : null,
         bottomNavigationBar: ClipRRect(
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(20),
@@ -729,6 +765,83 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _openAndTestCamera() async {
+    // 申请相机权限
+    final status = await Permission.camera.request();
+    if (status != PermissionStatus.granted) {
+      _showSnack('未授予相机权限');
+      return;
+    }
+
+    try {
+      final picker = ImagePicker();
+      final XFile? photo = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 1500,
+      );
+      if (photo == null) {
+        _showSnack('已取消拍摄');
+        return;
+      }
+      if (!mounted) return;
+      // 预览拍到的照片
+      // 使用底部弹窗展示
+      // ignore: use_build_context_synchronously
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.white,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder: (context) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    '摄像头测试预览',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.file(
+                      File(photo.path),
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('关闭'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      _showSnack('打开摄像头失败: $e');
+    }
+  }
+
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg)),
     );
   }
 }

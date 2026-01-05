@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async'; // 添加：Timer、Future、Stream 等
 import 'dart:math' as math;
-import 'dart:math';
 import 'dart:io';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:ai_assistant/services/vision_service.dart';
+import 'package:ai_assistant/providers/conversation_provider.dart';
+import 'package:path_provider/path_provider.dart';
+
 import 'package:ai_assistant/models/conversation.dart';
 import 'package:ai_assistant/models/message.dart';
 import 'package:ai_assistant/models/xiaozhi_config.dart';
 import 'package:ai_assistant/models/dify_config.dart';
-import 'package:ai_assistant/providers/conversation_provider.dart';
-import 'package:ai_assistant/providers/config_provider.dart';
 import 'package:ai_assistant/services/dify_service.dart';
 import 'package:ai_assistant/services/xiaozhi_service.dart';
+import 'package:ai_assistant/providers/config_provider.dart';
 import 'package:ai_assistant/widgets/message_bubble.dart';
 import 'package:ai_assistant/screens/voice_call_screen.dart';
-import 'dart:convert';
-import 'dart:async';
-import 'package:path_provider/path_provider.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -47,7 +48,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<double> _waveHeights = List.filled(20, 0.0);
   double _minWaveHeight = 5.0;
   double _maxWaveHeight = 30.0;
-  final Random _random = Random();
+  final math.Random _random = math.Random();
 
   @override
   void initState() {
@@ -766,7 +767,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   IconButton(
                     icon: const Icon(
                       Icons.add_circle_outline,
-                      color: Color(0xFF9CA3AF), // 使用紫色，与小智的麦克风按钮风格一致
+                      color: Color(0xFF9CA3AF),
                       size: 24,
                     ),
                     onPressed: _showImagePickerOptions,
@@ -774,6 +775,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     constraints: const BoxConstraints(),
                     splashRadius: 22,
                   ),
+                // 新增：在小智对话的输入栏显示相机按钮
+                if (widget.conversation.type == ConversationType.xiaozhi &&
+                    !hasText)
+                  _buildCameraAction(),
                 _buildSendButton(hasText),
                 if (widget.conversation.type == ConversationType.xiaozhi &&
                     !hasText)
@@ -928,6 +933,46 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           const SizedBox(width: 10),
+
+          // 新增：相机按钮（语音模式也可拍照识别）
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  spreadRadius: 0,
+                  offset: const Offset(0, 2),
+                ),
+                BoxShadow(
+                  color: Colors.white.withOpacity(0.8),
+                  blurRadius: 4,
+                  spreadRadius: 0,
+                  offset: const Offset(0, -1),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(25),
+                onTap: _captureAndSendToVision,
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Icon(
+                    Icons.camera_alt,
+                    color: Colors.grey.shade700,
+                    size: 22,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+
           // 键盘按钮 (切换回文本模式)
           Container(
             decoration: BoxDecoration(
@@ -982,18 +1027,50 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // 发送按钮（在输入栏右侧使用）
   Widget _buildSendButton(bool hasText) {
     return IconButton(
-      key: const ValueKey('send_button'),
-      icon: Icon(
-        Icons.send_rounded,
-        color: hasText ? Colors.black : const Color(0xFFC4C9D2),
-        size: 24,
-      ),
-      onPressed: hasText ? _sendMessage : null,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      constraints: const BoxConstraints(),
-      splashRadius: 22,
+      icon: const Icon(Icons.send, size: 24),
+      onPressed: hasText ? _sendMessage : null, // 无内容时禁用
+      tooltip: '发送',
+    );
+  }
+
+  // 底部操作按钮（发送、语音、相机）
+  Widget _buildBottomActions() {
+    final bool hasText = _textController.text.trim().isNotEmpty;
+
+    return Row(
+      children: [
+        // 相机按钮（仅在小智对话中显示）
+        _buildCameraAction(),
+
+        // 语音输入按钮
+        if (widget.conversation.type == ConversationType.xiaozhi)
+          IconButton(
+            icon: const Icon(Icons.mic, size: 24),
+            onPressed: () {
+              setState(() {
+                _isVoiceInputMode = true;
+              });
+            },
+            tooltip: '语音输入',
+          ),
+
+        // 发送按钮
+        _buildSendButton(hasText),
+      ],
+    );
+  }
+
+  // 示例：在输入栏旁新增一个相机图标按钮（仅 Xiaozhi 会话显示）
+  Widget _buildCameraAction() {
+    final isXiaozhi = widget.conversation.type == ConversationType.xiaozhi;
+    if (!isXiaozhi) return const SizedBox.shrink();
+    return IconButton(
+      icon: const Icon(Icons.camera_alt, size: 22),
+      onPressed: _captureAndSendToVision,
+      tooltip: '拍照识别',
     );
   }
 
@@ -1629,6 +1706,77 @@ class _ChatScreenState extends State<ChatScreen> {
         _isLoading = false;
       });
       _scrollToBottom();
+    }
+  }
+
+  // 拍照并发送到视觉服务
+  Future<void> _captureAndSendToVision() async {
+    try {
+      // 申请权限并拍照
+      final status = await Permission.camera.request();
+      if (status != PermissionStatus.granted) {
+        _showCustomSnackbar('未授予相机权限');
+        return;
+      }
+      final picker = ImagePicker();
+      final XFile? shot = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 1500,
+      );
+      if (shot == null) return;
+
+      // 保存到会话目录
+      final appDir = await getApplicationDocumentsDirectory();
+      final dir = Directory(
+        '${appDir.path}/conversations/${widget.conversation.id}/images',
+      );
+      await dir.create(recursive: true);
+      final fileName = 'camera_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final saved = File('${dir.path}/$fileName');
+      await File(shot.path).copy(saved.path);
+
+      // 插入用户图片消息（识别中）
+      final conversationProvider = Provider.of<ConversationProvider>(
+        context,
+        listen: false,
+      );
+      await conversationProvider.addMessage(
+        conversationId: widget.conversation.id,
+        role: MessageRole.user,
+        content: '[图片识别中...]',
+        isImage: true,
+        imageLocalPath: saved.path,
+      );
+
+      // 读取小智配置以复用认证（token 与设备ID）
+      final configProvider = Provider.of<ConfigProvider>(context, listen: false);
+      final xiaozhiConfig = configProvider.xiaozhiConfigs.firstWhere(
+        (c) => c.id == widget.conversation.configId,
+      );
+
+      // 视觉服务调用（注意替换 visionUrl 为你的实际路由）
+      final vs = VisionService(
+        visionUrl: 'http://183.251.85.225:8003/mcp/vision/explain', // TODO: 替换为实际 VisionHandler 路径
+        authToken: xiaozhiConfig.token,     // 复用小智 Token
+        deviceId: xiaozhiConfig.macAddress, // 复用设备ID（与 Token 中绑定一致）
+        clientId: 'android-client',
+      );
+
+      final responseText = await vs.analyzeImage(
+        saved,
+        question: '请识别这张图片的内容',
+      );
+
+      // 插入助手消息
+      await conversationProvider.addMessage(
+        conversationId: widget.conversation.id,
+        role: MessageRole.assistant,
+        content: responseText,
+      );
+      _scrollToBottom();
+    } catch (e) {
+      _showCustomSnackbar('图片识别失败: $e');
     }
   }
 }
