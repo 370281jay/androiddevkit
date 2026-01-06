@@ -3,15 +3,23 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'dart:async';
 
 class CameraPane extends StatefulWidget {
-  final double rotationDegrees; // 旋转角度，可任意度数
-  final CameraLensDirection lensDirection; // 前/后摄像头
+  final double rotationDegrees;
+  final CameraLensDirection lensDirection;
+  final Function(File imageFile)? onPhotoTaken; // 新增：拍照回调
+  final bool autoPhotoEnabled; // 新增：是否启用自动拍照
+  final Duration? autoPhotoInterval; // 新增：自动拍照间隔
+
   const CameraPane({
     super.key,
     this.rotationDegrees = 0,
     this.lensDirection = CameraLensDirection.back,
+    this.onPhotoTaken,
+    this.autoPhotoEnabled = false,
+    this.autoPhotoInterval = const Duration(seconds: 20),
   });
 
   @override
@@ -24,25 +32,117 @@ class _CameraPaneState extends State<CameraPane> with WidgetsBindingObserver {
   double _rotation = 0;
   bool _initializing = false;
   bool _initialized = false;
+  String _errorMessage = '';
+  
+  // 自动拍照相关
+  Timer? _autoPhotoTimer;
+  int _photoCount = 0;
+  bool _isCapturing = false;
 
   @override
   void initState() {
     super.initState();
     _rotation = widget.rotationDegrees;
     WidgetsBinding.instance.addObserver(this);
-    // 延迟更长时间，确保纹理系统完全就绪后再初始化
     SchedulerBinding.instance.addPostFrameCallback((_) async {
       if (mounted) {
-        // 等待额外的渲染帧，确保 Surface 完全创建
-        await Future.delayed(const Duration(milliseconds: 300));
+        await Future.delayed(const Duration(milliseconds: 500));
         _initAfterSized();
       }
     });
   }
 
+  @override
+  void didUpdateWidget(covariant CameraPane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    // 处理自动拍照状态变化
+    if (oldWidget.autoPhotoEnabled != widget.autoPhotoEnabled) {
+      if (widget.autoPhotoEnabled) {
+        _startAutoPhoto();
+      } else {
+        _stopAutoPhoto();
+      }
+    }
+    
+    if (oldWidget.rotationDegrees != widget.rotationDegrees) {
+      setState(() => _rotation = widget.rotationDegrees);
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _stopAutoPhoto();
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  // 启动自动拍照
+  void _startAutoPhoto() {
+    if (_autoPhotoTimer != null || !_initialized || widget.onPhotoTaken == null) return;
+    
+    debugPrint('CameraPane: 启动自动拍照，间隔${widget.autoPhotoInterval?.inSeconds}秒');
+    
+    _autoPhotoTimer = Timer.periodic(widget.autoPhotoInterval!, (timer) async {
+      if (!mounted || !_initialized || _isCapturing) {
+        return;
+      }
+      
+      await _takePhoto(isAuto: true);
+    });
+  }
+
+  // 停止自动拍照
+  void _stopAutoPhoto() {
+    _autoPhotoTimer?.cancel();
+    _autoPhotoTimer = null;
+    setState(() => _photoCount = 0);
+    debugPrint('CameraPane: 停止自动拍照');
+  }
+
+  // 拍照方法
+  Future<void> _takePhoto({bool isAuto = false}) async {
+    if (_controller == null || !_controller!.value.isInitialized || _isCapturing) {
+      debugPrint('CameraPane: 无法拍照，相机未准备好');
+      return;
+    }
+
+    try {
+      setState(() => _isCapturing = true);
+      
+      if (isAuto) {
+        _photoCount++;
+        debugPrint('CameraPane: 执行自动拍照 #$_photoCount');
+      } else {
+        debugPrint('CameraPane: 执行手动拍照');
+      }
+
+      // 使用相机控制器拍照
+      final XFile photo = await _controller!.takePicture();
+      final File imageFile = File(photo.path);
+      
+      // 调用回调函数，传递图片给父组件
+      if (widget.onPhotoTaken != null) {
+        widget.onPhotoTaken!(imageFile);
+      }
+      
+      debugPrint('CameraPane: 拍照成功，路径: ${photo.path}');
+      
+    } catch (e) {
+      debugPrint('CameraPane: 拍照失败: $e');
+    } finally {
+      setState(() => _isCapturing = false);
+    }
+  }
+
+  // 手动拍照（供外部调用）
+  Future<void> takePhoto() async {
+    await _takePhoto(isAuto: false);
+  }
+
   Future<void> _initAfterSized() async {
-    // 等待布局完成并获得非零尺寸，最多等待 1.2s，对 external 镜头更宽容
-    for (int i = 0; i < 12; i++) {
+    for (int i = 0; i < 15; i++) {
       await Future.delayed(const Duration(milliseconds: 100));
       final size = context.size;
       if (size != null && size.width > 0 && size.height > 0) {
@@ -55,10 +155,10 @@ class _CameraPaneState extends State<CameraPane> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // 后台时释放，前台时尝试恢复；不早退，避免错过恢复机会
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       try {
         debugPrint('CameraPane: lifecycle=$state -> 停止并释放控制器');
+        _stopAutoPhoto();
         _controller?.dispose();
         _controller = null;
         _initialized = false;
@@ -68,17 +168,15 @@ class _CameraPaneState extends State<CameraPane> with WidgetsBindingObserver {
     } else if (state == AppLifecycleState.resumed) {
       debugPrint('CameraPane: lifecycle=$state -> 尝试重新初始化相机');
       if (!_initializing) {
-        _initAfterSized(); // 先确保右侧面板有尺寸
+        _initAfterSized();
       }
     }
   }
 
   CameraDescription _pickBestCamera() {
-    // 支持 external 镜头：按入参优先，否则按可靠性排序
     final specific = _cameras.where((c) => c.lensDirection == widget.lensDirection).toList();
     if (specific.isNotEmpty) return specific.first;
 
-    // 按稳定性排序：后置 -> 前置 -> external -> 其它
     final back = _cameras.where((c) => c.lensDirection == CameraLensDirection.back).toList();
     if (back.isNotEmpty) return back.first;
     final front = _cameras.where((c) => c.lensDirection == CameraLensDirection.front).toList();
@@ -96,153 +194,144 @@ class _CameraPaneState extends State<CameraPane> with WidgetsBindingObserver {
 
     final status = await Permission.camera.request();
     if (status != PermissionStatus.granted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('未授予相机权限')),
-        );
-      }
-      _initializing = false;
+      setState(() {
+        _errorMessage = '未授予相机权限';
+        _initializing = false;
+      });
       return;
     }
 
     try {
       _cameras = await availableCameras();
       if (_cameras.isEmpty) {
-        debugPrint('CameraPane: availableCameras() 返回空列表');
-        throw CameraException('no_cameras', '设备上未发现摄像头');
+        setState(() {
+          _errorMessage = '设备上未发现摄像头';
+          _initializing = false;
+        });
+        return;
       }
+      
       for (final c in _cameras) {
         debugPrint('CameraPane: 可用摄像头 name=${c.name}, lens=${c.lensDirection}');
       }
 
       CameraDescription cam = _pickBestCamera();
-
-      // external 镜头也正常支持，不再单独警告
       debugPrint('CameraPane: 选择摄像头=${cam.name}, lens=${cam.lensDirection}');
 
-      CameraController makeController(CameraDescription desc) {
-        return CameraController(
-          desc,
-          ResolutionPreset.medium, // 提升分辨率，external 镜头通常支持更高分辨率
-          enableAudio: false,
-          imageFormatGroup: ImageFormatGroup.jpeg, // 更通用的格式，external 镜头兼容性更好
-        );
+      if (cam.lensDirection == CameraLensDirection.external) {
+        await _tryExternalCameraInit(cam);
+      } else {
+        await _tryRegularCameraInit(cam);
       }
 
-      const int maxRetries = 6; // 增加重试次数，external 镜头可能需要更多时间
-      int attempt = 0;
-      CameraController? localController = makeController(cam);
-
-      while (attempt < maxRetries) {
-        attempt++;
-        try {
-          debugPrint('CameraPane: 初始化尝试 #$attempt');
-          // 对 external 镜头，更长的等待时间确保驱动就绪
-          final waitTime = cam.lensDirection == CameraLensDirection.external ? 200 : 120;
-          await Future.delayed(Duration(milliseconds: waitTime));
-          
-          // 检查控制器是否仍然有效，避免对已释放实例调用 initialize
-          if (localController == null) {
-            debugPrint('CameraPane: 控制器已被释放，重新创建');
-            localController = makeController(cam);
-          }
-          await localController!.initialize();
-          
-          // 成功后再赋值到字段，避免生命周期并发导致"对已释放实例初始化"
-          _controller?.dispose();
-          _controller = localController;
-          _initialized = true;
-          break;
-        } catch (e) {
-          final msg = e.toString().toLowerCase();
-          debugPrint('CameraPane: initialize() 异常: $e');
-
-          if (msg.contains('no capture session')) {
-            try {
-              localController?.dispose();
-              localController = null; // 标记为已释放
-              
-              // 尝试切换到备用镜头（仍保留原有的排序逻辑）
-              final candidates = _cameras
-                  .where((c) => c.name != cam.name)
-                  .toList()
-                ..sort((a, b) {
-                  int rank(CameraLensDirection d) {
-                    switch (d) {
-                      case CameraLensDirection.back: return 0;
-                      case CameraLensDirection.front: return 1;
-                      case CameraLensDirection.external: return 2;
-                      default: return 3;
-                    }
-                  }
-                  return rank(a.lensDirection).compareTo(rank(b.lensDirection));
-                });
-              if (candidates.isNotEmpty) {
-                cam = candidates.first;
-                debugPrint('CameraPane: 切换备用摄像头=${cam.name}, lens=${cam.lensDirection}');
-                localController = makeController(cam);
-                continue;
-              }
-            } catch (_) {}
-          }
-
-          // 若是 disposed 控制器错误，重新创建后重试
-          if (msg.contains('disposed')) {
-            localController?.dispose();
-            localController = makeController(cam);
-            await Future.delayed(const Duration(milliseconds: 200));
-            continue;
-          }
-
-          // Surface/Session 相关错误，延长等待时间后重试
-          if (msg.contains('session') || msg.contains('surface')) {
-            final delay = cam.lensDirection == CameraLensDirection.external ? 500 : 300;
-            await Future.delayed(Duration(milliseconds: delay));
-            continue;
-          }
-          rethrow;
-        }
-      }
-
-      if (!_initialized) {
-        throw CameraException('capture_session_unavailable', 
-          '相机会话未建立（重试${maxRetries}次失败，镜头类型：${cam.lensDirection}）');
+      // 初始化成功后，如果需要自动拍照，则启动
+      if (_initialized && widget.autoPhotoEnabled) {
+        _startAutoPhoto();
       }
 
       if (mounted) setState(() {});
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('初始化摄像头失败: $e')),
-        );
-      }
+      debugPrint('CameraPane: 所有初始化方案均失败: $e');
+      setState(() {
+        _errorMessage = 'External镜头不支持连续预览';
+        _initialized = false;
+      });
     } finally {
       _initializing = false;
     }
   }
 
-  void _switchCamera() async {
-    if (_cameras.isEmpty) return;
-    final current = _controller?.description;
-    final other = _cameras.firstWhere(
-      (c) => current == null || c.lensDirection != current.lensDirection,
-      orElse: () => current ?? _cameras.first,
-    );
-    if (current == other) return;
+  Future<void> _tryExternalCameraInit(CameraDescription cam) async {
+    final configs = [
+      {
+        'preset': ResolutionPreset.low,
+        'format': ImageFormatGroup.yuv420,
+        'delay': 1200,
+      },
+      {
+        'preset': ResolutionPreset.low,
+        'format': ImageFormatGroup.yuv420,
+        'delay': 1000,
+      },
+      {
+        'preset': ResolutionPreset.low,
+        'format': ImageFormatGroup.jpeg,
+        'delay': 800,
+      },
+    ];
 
+    for (final config in configs) {
+      try {
+        debugPrint('CameraPane: External镜头尝试配置: ${config}');
+        _controller?.dispose();
+        
+        _controller = CameraController(
+          cam,
+          config['preset'] as ResolutionPreset,
+          enableAudio: false,
+          imageFormatGroup: config['format'] as ImageFormatGroup,
+        );
+        
+        await Future.delayed(Duration(milliseconds: config['delay'] as int));
+        await _controller!.initialize();
+        _initialized = true;
+        debugPrint('CameraPane: External镜头初始化成功，使用配置: ${config}');
+        return;
+      } catch (e) {
+        debugPrint('CameraPane: External镜头配置${config}失败: $e');
+        _controller?.dispose();
+        _controller = null;
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+    }
+    
+    throw CameraException('external_all_failed', 'External镜头所有配置均失败');
+  }
+
+  Future<void> _tryRegularCameraInit(CameraDescription cam) async {
+    _controller = CameraController(
+      cam,
+      ResolutionPreset.medium,
+      enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.jpeg,
+    );
+    
+    await Future.delayed(const Duration(milliseconds: 200));
+    await _controller!.initialize();
+    _initialized = true;
+  }
+
+  void _rotateBy(double delta) {
+    setState(() {
+      _rotation = (_rotation + delta) % 360;
+    });
+  }
+
+  void _switchCamera() async {
+    if (_cameras.isEmpty || _cameras.length < 2) return;
     try {
-      await _controller?.dispose();
-      final local = CameraController(
-        other,
-        ResolutionPreset.medium,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
+      _stopAutoPhoto(); // 切换相机时停止自动拍照
+      
+      final current = _controller?.description;
+      final other = _cameras.firstWhere(
+        (c) => current == null || c.lensDirection != current.lensDirection,
+        orElse: () => current ?? _cameras.first,
       );
-      // external 镜头切换时也给予更多时间
-      final waitTime = other.lensDirection == CameraLensDirection.external ? 200 : 100;
-      await Future.delayed(Duration(milliseconds: waitTime));
-      await local.initialize();
-      _controller = local;
+      if (current == other) return;
+
+      await _controller?.dispose();
+      
+      if (other.lensDirection == CameraLensDirection.external) {
+        await _tryExternalCameraInit(other);
+      } else {
+        await _tryRegularCameraInit(other);
+      }
+      
+      // 切换成功后重新启动自动拍照
+      if (_initialized && widget.autoPhotoEnabled) {
+        _startAutoPhoto();
+      }
+      
       if (mounted) setState(() {});
     } catch (e) {
       debugPrint('CameraPane: 切换摄像头失败: $e');
@@ -255,34 +344,9 @@ class _CameraPaneState extends State<CameraPane> with WidgetsBindingObserver {
   }
 
   @override
-  void didUpdateWidget(covariant CameraPane oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.rotationDegrees != widget.rotationDegrees) {
-      setState(() => _rotation = widget.rotationDegrees);
-    }
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  void _rotateBy(double delta) {
-    setState(() {
-      _rotation = (_rotation + delta) % 360;
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     if (_controller == null || !_controller!.value.isInitialized) {
-      // 如果是 external 镜头且多次失败，提供按钮拍照模式
-      final isExternal = _cameras.isNotEmpty && 
-          _cameras.every((c) => c.lensDirection == CameraLensDirection.external);
-      
-      if (isExternal && !_initializing) {
+      if (!_initializing && _errorMessage.isNotEmpty) {
         return Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -290,29 +354,20 @@ class _CameraPaneState extends State<CameraPane> with WidgetsBindingObserver {
               Icon(Icons.camera_alt_outlined, size: 64, color: Colors.grey.shade400),
               const SizedBox(height: 16),
               Text(
-                'External镜头连续预览不可用',
-                style: TextStyle(color: Colors.grey.shade600),
+                _errorMessage,
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+                textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  // 调用原有的拍照识别流程
-                  final picker = ImagePicker();
-                  final image = await picker.pickImage(source: ImageSource.camera);
-                  if (image != null && mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('图片已拍摄，可进行识别')),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.camera_enhance),
-                label: const Text('点击拍照'),
+              Text(
+                '使用拍照按钮进行识别',
+                style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
               ),
             ],
           ),
         );
       }
-
+      
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -329,11 +384,9 @@ class _CameraPaneState extends State<CameraPane> with WidgetsBindingObserver {
     }
 
     final preview = CameraPreview(_controller!);
-
     return Stack(
       fit: StackFit.expand,
       children: [
-        // 旋转预览
         Center(
           child: Transform.rotate(
             angle: _rotation * math.pi / 180.0,
@@ -343,7 +396,58 @@ class _CameraPaneState extends State<CameraPane> with WidgetsBindingObserver {
             ),
           ),
         ),
-        // 右下角控制条：旋转/切换摄像头
+        
+        // 拍照状态指示器
+        if (_isCapturing)
+          Positioned.fill(
+            child: Container(
+              color: Colors.white.withOpacity(0.3),
+              child: const Center(
+                child: Icon(
+                  Icons.camera_alt,
+                  size: 64,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          
+        // 自动拍照计数显示
+        if (widget.autoPhotoEnabled && _photoCount > 0)
+          Positioned(
+            top: 16,
+            left: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '自动拍照 $_photoCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
         Positioned(
           right: 12,
           bottom: 12,
@@ -364,12 +468,18 @@ class _CameraPaneState extends State<CameraPane> with WidgetsBindingObserver {
                   onPressed: () => _rotateBy(90),
                   tooltip: '右转90°',
                 ),
-                if (_cameras.length > 1) // 只有多个摄像头时才显示切换按钮
+                if (_cameras.length > 1)
                   IconButton(
                     icon: const Icon(Icons.cameraswitch, color: Colors.white),
                     onPressed: _switchCamera,
                     tooltip: '切换摄像头',
                   ),
+                // 手动拍照按钮
+                IconButton(
+                  icon: const Icon(Icons.camera_alt, color: Colors.white),
+                  onPressed: _takePhoto,
+                  tooltip: '手动拍照',
+                ),
               ],
             ),
           ),
