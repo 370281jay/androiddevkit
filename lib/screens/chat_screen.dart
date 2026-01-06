@@ -760,93 +760,87 @@ class _ChatScreenState extends State<ChatScreen> {
         bottom: 16 + MediaQuery.of(context).padding.bottom,
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.85,
-            ),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F7F9),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.07),
-                  blurRadius: 8,
-                  spreadRadius: 0,
-                  offset: const Offset(0, 3),
-                ),
-                BoxShadow(
-                  color: Colors.white.withOpacity(0.8),
-                  blurRadius: 5,
-                  spreadRadius: 0,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _textController,
-                    decoration: const InputDecoration(
-                      hintText: '输入消息...',
-                      hintStyle: TextStyle(
-                        color: Color(0xFF9CA3AF),
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F7F9),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.07),
+                    blurRadius: 8,
+                    spreadRadius: 0,
+                    offset: const Offset(0, 3),
+                  ),
+                  BoxShadow(
+                    color: Colors.white.withOpacity(0.8),
+                    blurRadius: 5,
+                    spreadRadius: 0,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _textController,
+                      decoration: const InputDecoration(
+                        hintText: '输入消息...',
+                        hintStyle: TextStyle(
+                          color: Color(0xFF9CA3AF),
+                          fontSize: 16,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 14,
+                        ),
+                      ),
+                      style: const TextStyle(
+                        color: Color(0xFF1F2937),
                         fontSize: 16,
                       ),
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 14,
+                      maxLines: 1,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _sendMessage(),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  if (widget.conversation.type == ConversationType.dify && !hasText)
+                    IconButton(
+                      icon: const Icon(
+                        Icons.add_circle_outline,
+                        color: Color(0xFF9CA3AF),
+                        size: 24,
                       ),
+                      onPressed: _showImagePickerOptions,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      constraints: const BoxConstraints(),
+                      splashRadius: 22,
                     ),
-                    style: const TextStyle(
-                      color: Color(0xFF1F2937),
-                      fontSize: 16,
+                  if (widget.conversation.type == ConversationType.xiaozhi && !hasText)
+                    _buildCameraAction(),
+                  _buildSendButton(hasText),
+                  if (widget.conversation.type == ConversationType.xiaozhi && !hasText)
+                    IconButton(
+                      icon: const Icon(
+                        Icons.mic,
+                        color: Color.fromARGB(255, 108, 108, 112),
+                        size: 24,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isVoiceInputMode = true;
+                        });
+                      },
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      constraints: const BoxConstraints(),
+                      splashRadius: 22,
                     ),
-                    maxLines: 1,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _sendMessage(),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ),
-                if (widget.conversation.type == ConversationType.dify &&
-                    !hasText)
-                  IconButton(
-                    icon: const Icon(
-                      Icons.add_circle_outline,
-                      color: Color(0xFF9CA3AF),
-                      size: 24,
-                    ),
-                    onPressed: _showImagePickerOptions,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    constraints: const BoxConstraints(),
-                    splashRadius: 22,
-                  ),
-                // 新增：在小智对话的输入栏显示相机按钮
-                if (widget.conversation.type == ConversationType.xiaozhi &&
-                    !hasText)
-                  _buildCameraAction(),
-                _buildSendButton(hasText),
-                if (widget.conversation.type == ConversationType.xiaozhi &&
-                    !hasText)
-                  IconButton(
-                    icon: const Icon(
-                      Icons.mic,
-                      color: Color.fromARGB(255, 108, 108, 112),
-                      size: 24,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _isVoiceInputMode = true;
-                      });
-                    },
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    constraints: const BoxConstraints(),
-                    splashRadius: 22,
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
