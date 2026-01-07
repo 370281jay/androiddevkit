@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:async';
+import 'dart:async'; // 添加：Timer、Future、Stream 等
 import 'dart:math' as math;
-import 'dart:convert';      // 用于 json.encode
-import 'package:http/http.dart' as http;  
 import 'dart:convert';      // 用于 json.encode
 import 'package:http/http.dart' as http;  
 import 'dart:io';
@@ -221,6 +219,7 @@ from(bucket: "vitals_data")
       _xiaozhiService!.stopPlayback();
       _xiaozhiService!.disconnect();
     }
+
     super.dispose();
   }
 
@@ -341,7 +340,7 @@ from(bucket: "vitals_data")
   |> keep(columns: ["_time","_field","_value"])
   |> sort(columns: ["_time"], desc: true)
   |> limit(n: 20)
-'''';
+'''; // 修复：这里应为三个引号结尾
 
       final res = await _influxDBService.query(query: flux);
       if (res.hasError || !res.hasResults) {
@@ -687,15 +686,14 @@ from(bucket: "vitals_data")
       return Column(
         children: [
           if (widget.conversation.type == ConversationType.xiaozhi) _buildXiaozhiInfo(),
-          // 新增：体征条
-          _buildVitalsBar(),
+          // 移除：体征条不再显示在聊天区域
+          // _buildVitalsBar(),
           Expanded(child: _buildMessageList()),
           _buildInputArea(),
         ],
       );
     }
-
-    // 横屏：信息条放到左侧聊天列顶部
+    
     return Row(
       children: [
         Expanded(
@@ -703,8 +701,8 @@ from(bucket: "vitals_data")
           child: Column(
             children: [
               if (widget.conversation.type == ConversationType.xiaozhi) _buildXiaozhiInfo(),
-              // 新增：体征条
-              _buildVitalsBar(),
+              // 移除：体征条不再显示在聊天区域
+              // _buildVitalsBar(),
               Expanded(child: _buildMessageList()),
               _buildInputArea(),
             ],
@@ -713,66 +711,78 @@ from(bucket: "vitals_data")
         Container(width: 1, color: Colors.grey.withOpacity(0.2)),
         Expanded(
           flex: 2,
-          child: _showCameraPane ? _buildCameraWithControls() : _buildRightPlaceholder(),
-        ),
-      ],
-    );
-  }
-
-  // 将原先摄像头 Stack 抽成方法，便于上面调用
-  Widget _buildCameraWithControls() {
-    return Stack(
-      children: [
-        CameraPane(rotationDegrees: _cameraRotation),
-        // 摄像头控制面板
-        Positioned(
-          top: 16,
-          right: 16,
-          child: Column(
-            children: [
-              // 开关摄像头按钮
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: IconButton(
-                  icon: Icon(
-                    _showCameraPane ? Icons.videocam_off : Icons.videocam,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      _showCameraPane = !_showCameraPane;
-                    });
-                    if (!_showCameraPane) {
-                      _stopAutoPhoto(); // 关闭摄像头时停止自动拍照
-                    }
-                  },
-                  tooltip: _showCameraPane ? '关闭摄像头' : '打开摄像头',
-                ),
-              ),
-              const SizedBox(height: 8),
-              // 自动拍照开关
-              if (_showCameraPane && widget.conversation.type == ConversationType.xiaozhi)
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: IconButton(
-                    icon: Icon(
-                      _autoPhotoEnabled ? Icons.timer_off : Icons.timer,
-                      color: _autoPhotoEnabled ? Colors.red : Colors.white,
-                      size: 24,
+          child: _showCameraPane
+              ? Stack(
+                  children: [
+                    // 传递自动拍照参数和回调
+                    CameraPane(
+                      rotationDegrees: _cameraRotation,
+                      autoPhotoEnabled: _autoPhotoEnabled,
+                      autoPhotoInterval: const Duration(seconds: 10),
+                      onPhotoTaken: _handleCameraPhotoTaken,
                     ),
-                    onPressed: _toggleAutoPhoto,
-                    tooltip: _autoPhotoEnabled ? '停止自动拍照' : '启动自动拍照',
-                  ),
-                ),
-            ],
-          ),
+
+                    // 新增：把体征条叠加到摄像头画面上方
+                    Positioned(
+                      top: 12,
+                      left: 12,
+                      right: 72, // 预留右侧按钮列宽，避免遮挡
+                      child: _buildVitalsBar(),
+                    ),
+
+                    // 摄像头控制面板
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: Column(
+                        children: [
+                          // 开关摄像头按钮
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.6),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: IconButton(
+                              icon: Icon(
+                                _showCameraPane ? Icons.videocam_off : Icons.videocam,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _showCameraPane = !_showCameraPane;
+                                });
+                                if (!_showCameraPane) {
+                                  _stopAutoPhoto(); // 关闭摄像头时停止自动拍照
+                                }
+                              },
+                              tooltip: _showCameraPane ? '关闭摄像头' : '打开摄像头',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // 自动拍照开关
+                          if (_showCameraPane && widget.conversation.type == ConversationType.xiaozhi)
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.6),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: IconButton(
+                                icon: Icon(
+                                  _autoPhotoEnabled ? Icons.timer_off : Icons.timer,
+                                  color: _autoPhotoEnabled ? Colors.red : Colors.white,
+                                  size: 24,
+                                ),
+                                onPressed: _toggleAutoPhoto,
+                                tooltip: _autoPhotoEnabled ? '停止自动拍照' : '启动自动拍照',
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                )
+              : _buildRightPlaceholder(),
         ),
       ],
     );
@@ -1681,6 +1691,440 @@ from(bucket: "vitals_data")
   // 停止波形动画
   void _stopWaveAnimation() {
     _waveAnimationTimer?.cancel();
+    _waveAnimationTimer = null;
+
+        _waveAnimationTimer = null;
+  }
+
+  // 构建波形动画指示器
+  Widget _buildWaveAnimationIndicator() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: List.generate(
+          16,
+          (index) => AnimatedContainer(
+            duration: const Duration(milliseconds: 100),
+            width: 3,
+            height: 20 * _waveHeights[index],
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.6),
+              borderRadius: BorderRadius.circular(1.5),
+            ),
+            curve: Curves.easeInOut,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 显示图片选择器选项
+  void _showImagePickerOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      elevation: 20,
+      barrierColor: Colors.black.withOpacity(0.5),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 顶部拖动条
+              Container(
+                width: 36,
+                height: 5,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 1,
+                      spreadRadius: 0,
+                      offset: const Offset(0, 0.5),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // 从相册选择选项
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 10,
+                        spreadRadius: 0,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 6,
+                      ),
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.blue.withOpacity(0.1),
+                              blurRadius: 4,
+                              spreadRadius: 0,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.photo_library,
+                          color: Colors.blue.shade600,
+                          size: 24,
+                        ),
+                      ),
+                      title: const Text(
+                        '从相册选择',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '选择已有照片',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _pickImage(true);
+                      },
+                    ),
+                  ),
+                ),
+              ),
+
+              // 拍照选项
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 10,
+                        spreadRadius: 0,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 6,
+                      ),
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.green.withOpacity(0.1),
+                              blurRadius: 4,
+                              spreadRadius: 0,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.camera_alt,
+                          color: Colors.green.shade600,
+                          size: 24,
+                        ),
+                      ),
+                      title: const Text(
+                        '拍照',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '拍摄新照片',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _pickImage(false);
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _pickImage(bool fromGallery) async {
+    if (widget.conversation.type != ConversationType.dify) {
+      _showCustomSnackbar('图片上传功能仅适用于Dify对话');
+      return;
+    }
+
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      if (_difyService == null) {
+        await _initDifyService();
+      }
+
+      if (_difyService == null) {
+        throw Exception("未设置Dify配置，请先在设置中配置Dify API");
+      }
+
+      final ImagePicker picker = ImagePicker();
+      final XFile? pickedFile = await picker.pickImage(
+        source: fromGallery ? ImageSource.gallery : ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 1500,
+      );
+
+      if (pickedFile == null) {
+        _showCustomSnackbar('已取消选择');
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // 获取应用的文档目录
+      final appDir = await getApplicationDocumentsDirectory();
+      final conversationDir = Directory(
+        '${appDir.path}/conversations/${widget.conversation.id}/images',
+      );
+      await conversationDir.create(recursive: true);
+
+      // 生成唯一的文件名
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final extension = pickedFile.path.split('.').last;
+      final fileName = 'image_$timestamp.$extension';
+      final localPath = '${conversationDir.path}/$fileName';
+
+      // 复制图片到永久存储
+      final File imageFile = File(pickedFile.path);
+      await imageFile.copy(localPath);
+
+      print('图片已保存到永久存储: $localPath');
+
+      final sessionId = widget.conversation.id;
+
+      // 在消息列表中显示用户上传的图片消息
+      final conversationProvider = Provider.of<ConversationProvider>(
+        context,
+        listen: false,
+      );
+
+      // 添加用户消息，使用永久存储的路径
+      await conversationProvider.addMessage(
+        conversationId: widget.conversation.id,
+        role: MessageRole.user,
+        content: "[图片上传中...]",
+        isImage: true,
+        imageLocalPath: localPath,
+      );
+
+      _scrollToBottom();
+
+      // 上传图片到Dify API
+      final response = await _difyService!.uploadFile(File(localPath));
+
+      if (response.containsKey('id')) {
+        final fileId = response['id'];
+        final messageContent = "";
+
+        // 更新最后一条用户消息为实际的图片消息
+        await conversationProvider.updateLastUserMessage(
+          conversationId: widget.conversation.id,
+          content: messageContent,
+          fileId: fileId,
+          isImage: true,
+          imageLocalPath: localPath,
+        );
+
+        final textPrompt = "分析这张图片";
+        final chatResponse = await _difyService!.sendMessage(
+          textPrompt,
+          sessionId: sessionId,
+          fileIds: [fileId],
+        );
+
+        await conversationProvider.addMessage(
+          conversationId: widget.conversation.id,
+          role: MessageRole.assistant,
+          content: chatResponse,
+        );
+      } else {
+        throw Exception("上传成功但服务器未返回文件ID: $response");
+      }
+
+      _showCustomSnackbar('图片上传成功');
+    } catch (e) {
+      print('图片上传失败: $e');
+
+      final conversationProvider = Provider.of<ConversationProvider>(
+        context,
+        listen: false,
+      );
+      await conversationProvider.addMessage(
+        conversationId: widget.conversation.id,
+        role: MessageRole.assistant,
+        content: '图片上传失败: ${e.toString()}',
+      );
+
+      _showCustomSnackbar('图片上传失败: ${e.toString()}');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+      _scrollToBottom();
+    }
+  }
+
+  // 拍照并发送到视觉服务
+  Future<void> _captureAndSendToVision({bool isAutoCapture = false}) async {
+    try {
+      // 申请权限并拍照
+      final status = await Permission.camera.request();
+      if (status != PermissionStatus.granted) {
+        if (!isAutoCapture) _showCustomSnackbar('未授予相机权限');
+        return;
+      }
+      
+      final picker = ImagePicker();
+      final XFile? shot = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 1500,
+      );
+      if (shot == null) return;
+
+      // 保存到会话目录
+      final appDir = await getApplicationDocumentsDirectory();
+      final dir = Directory(
+        '${appDir.path}/conversations/${widget.conversation.id}/images',
+      );
+      await dir.create(recursive: true);
+      
+      final prefix = isAutoCapture ? 'auto' : 'manual';
+      final fileName = '${prefix}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final saved = File('${dir.path}/$fileName');
+      await File(shot.path).copy(saved.path);
+
+      // 插入用户图片消息（识别中）
+      final conversationProvider = Provider.of<ConversationProvider>(
+        context,
+        listen: false,
+      );
+      
+      final content = isAutoCapture 
+          ? '[自动拍照 #$_photoCount - 识别中...]' 
+          : '[手动拍照 - 识别中...]';
+      
+      await conversationProvider.addMessage(
+        conversationId: widget.conversation.id,
+        role: MessageRole.user,
+        content: content,
+        isImage: true,
+        imageLocalPath: saved.path,
+      );
+
+      // 读取小智配置以复用认证
+      final configProvider = Provider.of<ConfigProvider>(context, listen: false);
+      final xiaozhiConfig = configProvider.xiaozhiConfigs.firstWhere(
+        (c) => c.id == widget.conversation.configId,
+      );
+
+      // 视觉服务调用
+      final vs = VisionService(
+        visionUrl: 'http://183.251.85.225:8003/mcp/vision/explain',
+        authToken: _xiaozhiService!.getAuthToken(),
+        deviceId: xiaozhiConfig.macAddress,
+        clientId: 'android-client',
+      );
+
+      final prompt = isAutoCapture 
+          ? '请简要分析这张自动拍摄的图片内容'
+          : '请识别这张图片的内容';
+
+      final responseText = await vs.analyzeImage(
+        saved,
+        question: prompt,
+      );
+
+      // Unicode解码处理
+      String decodedResponse = _decodeUnicodeString(responseText);
+
+      // 插入助手消息
+      await conversationProvider.addMessage(
+        conversationId: widget.conversation.id,
+        role: MessageRole.assistant,
+        content: decodedResponse,
+      );
+      
+      if (!isAutoCapture) {
+        _scrollToBottom();
+      }
+    } catch (e) {
+      if (!isAutoCapture) {
+        _showCustomSnackbar('图片识别失败: $e');
+      }
+      print('拍照识别失败: $e');
+    }
+
   }
 
   // 处理来自CameraPane的拍照结果
