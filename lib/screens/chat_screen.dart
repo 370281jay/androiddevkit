@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:async'; // 添加：Timer、Future、Stream 等
+import 'dart:async';
 import 'dart:math' as math;
+import 'dart:convert';      // 用于 json.encode
+import 'package:http/http.dart' as http;  
 import 'dart:io';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
@@ -9,6 +11,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:ai_assistant/services/vision_service.dart';
 import 'package:ai_assistant/providers/conversation_provider.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:ai_assistant/services/influxdb_service.dart';
+import 'package:ai_assistant/utils/logging.dart';
 
 import 'package:ai_assistant/models/conversation.dart';
 import 'package:ai_assistant/models/message.dart';
@@ -58,6 +62,14 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _autoPhotoTimer;
   bool _autoPhotoEnabled = false;
   int _photoCount = 0;
+
+  late InfluxDBService _influxDBService;
+
+  // 新增：vitals 状态与轮询
+  Timer? _vitalsTimer;
+  int? _heartRateBpm;
+  int? _respirationBpm;
+  DateTime? _vitalsTime;
 
   @override
   void initState() {
@@ -131,38 +143,11 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() => _showCameraPane = true);
       }
     });
-  }
 
-  // 安排自动重连
-  void _scheduleReconnect() {
-    // 取消现有重连定时器
-    _autoReconnectTimer?.cancel();
-
-    // 创建新的重连定时器，5秒后尝试重连
-    _autoReconnectTimer = Timer(const Duration(seconds: 5), () async {
-      print('正在尝试自动重连...');
-      if (_xiaozhiService != null && !_xiaozhiService!.isConnected && mounted) {
-        try {
-          await _xiaozhiService!.disconnect();
-          await _xiaozhiService!.connect();
-
-          setState(() {});
-          print('自动重连 ${_xiaozhiService!.isConnected ? "成功" : "失败"}');
-
-          // 如果重连失败，则继续尝试重连
-          if (!_xiaozhiService!.isConnected) {
-            _scheduleReconnect();
-          } else {
-            _autoReconnectTimer = null;
-          }
-        } catch (e) {
-          print('自动重连出错: $e');
-          _scheduleReconnect(); // 出错后继续尝试
-        }
-      } else {
-        _autoReconnectTimer = null;
-      }
-    });
+    // 初始化 InfluxDB 服务
+    _influxDBService = InfluxDBService();
+    // 启动轮询
+    _startVitalsPolling();
   }
 
   @override
@@ -173,12 +158,11 @@ class _ChatScreenState extends State<ChatScreen> {
     _autoReconnectTimer?.cancel();
     _waveAnimationTimer?.cancel();
     _autoPhotoTimer?.cancel(); // 取消自动拍照定时器
-
+    _vitalsTimer?.cancel();
     if (_xiaozhiService != null) {
       _xiaozhiService!.stopPlayback();
       _xiaozhiService!.disconnect();
     }
-
     super.dispose();
   }
 
@@ -275,6 +259,79 @@ class _ChatScreenState extends State<ChatScreen> {
     _difyService = await DifyService.create(
       apiKey: difyConfig.apiKey,
       apiUrl: difyConfig.apiUrl,
+    );
+  }
+
+  // 开始轮询体征数据
+  void _startVitalsPolling() {
+    _vitalsTimer?.cancel();
+    // 立即拉一次
+    _pollVitalsOnce();
+    // 每5秒拉取
+    _vitalsTimer = Timer.periodic(const Duration(seconds: 5), (_) => _pollVitalsOnce());
+  }
+
+  // 拉取体征数据
+  Future<void> _pollVitalsOnce() async {
+    try {
+      final data = await _influxDBService.fetchLatestVitals(
+        deviceId: '84F7035346E0', // 如需动态设备ID可接入配置
+      );
+      if (!mounted) return;
+      setState(() {
+        _heartRateBpm = data.heartRateBpm;
+        _respirationBpm = data.respirationBpm;
+        _vitalsTime = data.time;
+      });
+    } catch (e) {
+      // 静默失败即可，避免干扰聊天
+      debugPrint('Vitals poll error: $e');
+    }
+  }
+
+  // 新增：顶部信息条
+  Widget _buildVitalsBar() {
+    final hr = _heartRateBpm;
+    final rr = _respirationBpm;
+
+    Color chipColor(int? v, {int min = 1, int max = 200}) {
+      if (v == null) return Colors.grey.shade400;
+      if (v < min || v > max) return Colors.orange.shade600;
+      return Colors.green.shade600;
+    }
+
+    String tsText = _vitalsTime != null ? _vitalsTime!.toLocal().toIso8601String().substring(11, 19) : '--:--:--';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade300, width: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.monitor_heart, size: 18, color: chipColor(hr)),
+          const SizedBox(width: 6),
+          Text(hr != null ? '$hr bpm' : '--', style: TextStyle(color: chipColor(hr), fontWeight: FontWeight.w600)),
+          const SizedBox(width: 16),
+          Icon(Icons.air, size: 18, color: chipColor(rr, min: 1, max: 60)),
+          const SizedBox(width: 6),
+          Text(rr != null ? '$rr rpm' : '--', style: TextStyle(color: chipColor(rr, min: 1, max: 60), fontWeight: FontWeight.w600)),
+          const Spacer(),
+          InkWell(
+            onTap: _pollVitalsOnce,
+            child: Row(
+              children: [
+                const Icon(Icons.refresh, size: 16, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text(tsText, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -512,12 +569,15 @@ class _ChatScreenState extends State<ChatScreen> {
       return Column(
         children: [
           if (widget.conversation.type == ConversationType.xiaozhi) _buildXiaozhiInfo(),
+          // 新增：vitals 信息条
+          _buildVitalsBar(),
           Expanded(child: _buildMessageList()),
           _buildInputArea(),
         ],
       );
     }
-    
+
+    // 横屏：信息条放到左侧聊天列顶部
     return Row(
       children: [
         Expanded(
@@ -525,6 +585,7 @@ class _ChatScreenState extends State<ChatScreen> {
           child: Column(
             children: [
               if (widget.conversation.type == ConversationType.xiaozhi) _buildXiaozhiInfo(),
+              _buildVitalsBar(), // 新增
               Expanded(child: _buildMessageList()),
               _buildInputArea(),
             ],
@@ -533,69 +594,66 @@ class _ChatScreenState extends State<ChatScreen> {
         Container(width: 1, color: Colors.grey.withOpacity(0.2)),
         Expanded(
           flex: 2,
-          child: _showCameraPane
-              ? Stack(
-                  children: [
-                    // 传递自动拍照参数和回调
-                    CameraPane(
-                      rotationDegrees: _cameraRotation,
-                      autoPhotoEnabled: _autoPhotoEnabled,
-                      autoPhotoInterval: const Duration(seconds: 10),
-                      onPhotoTaken: _handleCameraPhotoTaken,
+          child: _showCameraPane ? _buildCameraWithControls() : _buildRightPlaceholder(),
+        ),
+      ],
+    );
+  }
+
+  // 将原先摄像头 Stack 抽成方法，便于上面调用
+  Widget _buildCameraWithControls() {
+    return Stack(
+      children: [
+        CameraPane(rotationDegrees: _cameraRotation),
+        // 摄像头控制面板
+        Positioned(
+          top: 16,
+          right: 16,
+          child: Column(
+            children: [
+              // 开关摄像头按钮
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: IconButton(
+                  icon: Icon(
+                    _showCameraPane ? Icons.videocam_off : Icons.videocam,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _showCameraPane = !_showCameraPane;
+                    });
+                    if (!_showCameraPane) {
+                      _stopAutoPhoto(); // 关闭摄像头时停止自动拍照
+                    }
+                  },
+                  tooltip: _showCameraPane ? '关闭摄像头' : '打开摄像头',
+                ),
+              ),
+              const SizedBox(height: 8),
+              // 自动拍照开关
+              if (_showCameraPane && widget.conversation.type == ConversationType.xiaozhi)
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    icon: Icon(
+                      _autoPhotoEnabled ? Icons.timer_off : Icons.timer,
+                      color: _autoPhotoEnabled ? Colors.red : Colors.white,
+                      size: 24,
                     ),
-                    // 摄像头控制面板
-                    Positioned(
-                      top: 16,
-                      right: 16,
-                      child: Column(
-                        children: [
-                          // 开关摄像头按钮
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.6),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: IconButton(
-                              icon: Icon(
-                                _showCameraPane ? Icons.videocam_off : Icons.videocam,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  _showCameraPane = !_showCameraPane;
-                                });
-                                if (!_showCameraPane) {
-                                  _stopAutoPhoto(); // 关闭摄像头时停止自动拍照
-                                }
-                              },
-                              tooltip: _showCameraPane ? '关闭摄像头' : '打开摄像头',
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          // 自动拍照开关
-                          if (_showCameraPane && widget.conversation.type == ConversationType.xiaozhi)
-                            Container(
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.6),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: IconButton(
-                                icon: Icon(
-                                  _autoPhotoEnabled ? Icons.timer_off : Icons.timer,
-                                  color: _autoPhotoEnabled ? Colors.red : Colors.white,
-                                  size: 24,
-                                ),
-                                onPressed: _toggleAutoPhoto,
-                                tooltip: _autoPhotoEnabled ? '停止自动拍照' : '启动自动拍照',
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                )
-              : _buildRightPlaceholder(),
+                    onPressed: _toggleAutoPhoto,
+                    tooltip: _autoPhotoEnabled ? '停止自动拍照' : '启动自动拍照',
+                  ),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -1504,437 +1562,6 @@ class _ChatScreenState extends State<ChatScreen> {
   // 停止波形动画
   void _stopWaveAnimation() {
     _waveAnimationTimer?.cancel();
-    _waveAnimationTimer = null;
-  }
-
-  // 构建波形动画指示器
-  Widget _buildWaveAnimationIndicator() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: List.generate(
-          16,
-          (index) => AnimatedContainer(
-            duration: const Duration(milliseconds: 100),
-            width: 3,
-            height: 20 * _waveHeights[index],
-            decoration: BoxDecoration(
-              color: Colors.blue.withOpacity(0.6),
-              borderRadius: BorderRadius.circular(1.5),
-            ),
-            curve: Curves.easeInOut,
-          ),
-        ),
-      ),
-    );
-  }
-
-  // 显示图片选择器选项
-  void _showImagePickerOptions() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      elevation: 20,
-      barrierColor: Colors.black.withOpacity(0.5),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 顶部拖动条
-              Container(
-                width: 36,
-                height: 5,
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2.5),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 1,
-                      spreadRadius: 0,
-                      offset: const Offset(0, 0.5),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // 从相册选择选项
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
-                        blurRadius: 10,
-                        spreadRadius: 0,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 6,
-                      ),
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(10),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.blue.withOpacity(0.1),
-                              blurRadius: 4,
-                              spreadRadius: 0,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.photo_library,
-                          color: Colors.blue.shade600,
-                          size: 24,
-                        ),
-                      ),
-                      title: const Text(
-                        '从相册选择',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black,
-                        ),
-                      ),
-                      subtitle: Text(
-                        '选择已有照片',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      onTap: () {
-                        Navigator.of(context).pop();
-                        _pickImage(true);
-                      },
-                    ),
-                  ),
-                ),
-              ),
-
-              // 拍照选项
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
-                        blurRadius: 10,
-                        spreadRadius: 0,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 6,
-                      ),
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(10),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.green.withOpacity(0.1),
-                              blurRadius: 4,
-                              spreadRadius: 0,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.camera_alt,
-                          color: Colors.green.shade600,
-                          size: 24,
-                        ),
-                      ),
-                      title: const Text(
-                        '拍照',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black,
-                        ),
-                      ),
-                      subtitle: Text(
-                        '拍摄新照片',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      onTap: () {
-                        Navigator.of(context).pop();
-                        _pickImage(false);
-                      },
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _pickImage(bool fromGallery) async {
-    if (widget.conversation.type != ConversationType.dify) {
-      _showCustomSnackbar('图片上传功能仅适用于Dify对话');
-      return;
-    }
-
-    try {
-      setState(() {
-        _isLoading = true;
-      });
-
-      if (_difyService == null) {
-        await _initDifyService();
-      }
-
-      if (_difyService == null) {
-        throw Exception("未设置Dify配置，请先在设置中配置Dify API");
-      }
-
-      final ImagePicker picker = ImagePicker();
-      final XFile? pickedFile = await picker.pickImage(
-        source: fromGallery ? ImageSource.gallery : ImageSource.camera,
-        imageQuality: 85,
-        maxWidth: 1500,
-      );
-
-      if (pickedFile == null) {
-        _showCustomSnackbar('已取消选择');
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
-
-      // 获取应用的文档目录
-      final appDir = await getApplicationDocumentsDirectory();
-      final conversationDir = Directory(
-        '${appDir.path}/conversations/${widget.conversation.id}/images',
-      );
-      await conversationDir.create(recursive: true);
-
-      // 生成唯一的文件名
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final extension = pickedFile.path.split('.').last;
-      final fileName = 'image_$timestamp.$extension';
-      final localPath = '${conversationDir.path}/$fileName';
-
-      // 复制图片到永久存储
-      final File imageFile = File(pickedFile.path);
-      await imageFile.copy(localPath);
-
-      print('图片已保存到永久存储: $localPath');
-
-      final sessionId = widget.conversation.id;
-
-      // 在消息列表中显示用户上传的图片消息
-      final conversationProvider = Provider.of<ConversationProvider>(
-        context,
-        listen: false,
-      );
-
-      // 添加用户消息，使用永久存储的路径
-      await conversationProvider.addMessage(
-        conversationId: widget.conversation.id,
-        role: MessageRole.user,
-        content: "[图片上传中...]",
-        isImage: true,
-        imageLocalPath: localPath,
-      );
-
-      _scrollToBottom();
-
-      // 上传图片到Dify API
-      final response = await _difyService!.uploadFile(File(localPath));
-
-      if (response.containsKey('id')) {
-        final fileId = response['id'];
-        final messageContent = "";
-
-        // 更新最后一条用户消息为实际的图片消息
-        await conversationProvider.updateLastUserMessage(
-          conversationId: widget.conversation.id,
-          content: messageContent,
-          fileId: fileId,
-          isImage: true,
-          imageLocalPath: localPath,
-        );
-
-        final textPrompt = "分析这张图片";
-        final chatResponse = await _difyService!.sendMessage(
-          textPrompt,
-          sessionId: sessionId,
-          fileIds: [fileId],
-        );
-
-        await conversationProvider.addMessage(
-          conversationId: widget.conversation.id,
-          role: MessageRole.assistant,
-          content: chatResponse,
-        );
-      } else {
-        throw Exception("上传成功但服务器未返回文件ID: $response");
-      }
-
-      _showCustomSnackbar('图片上传成功');
-    } catch (e) {
-      print('图片上传失败: $e');
-
-      final conversationProvider = Provider.of<ConversationProvider>(
-        context,
-        listen: false,
-      );
-      await conversationProvider.addMessage(
-        conversationId: widget.conversation.id,
-        role: MessageRole.assistant,
-        content: '图片上传失败: ${e.toString()}',
-      );
-
-      _showCustomSnackbar('图片上传失败: ${e.toString()}');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-      _scrollToBottom();
-    }
-  }
-
-  // 拍照并发送到视觉服务
-  Future<void> _captureAndSendToVision({bool isAutoCapture = false}) async {
-    try {
-      // 申请权限并拍照
-      final status = await Permission.camera.request();
-      if (status != PermissionStatus.granted) {
-        if (!isAutoCapture) _showCustomSnackbar('未授予相机权限');
-        return;
-      }
-      
-      final picker = ImagePicker();
-      final XFile? shot = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 85,
-        maxWidth: 1500,
-      );
-      if (shot == null) return;
-
-      // 保存到会话目录
-      final appDir = await getApplicationDocumentsDirectory();
-      final dir = Directory(
-        '${appDir.path}/conversations/${widget.conversation.id}/images',
-      );
-      await dir.create(recursive: true);
-      
-      final prefix = isAutoCapture ? 'auto' : 'manual';
-      final fileName = '${prefix}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final saved = File('${dir.path}/$fileName');
-      await File(shot.path).copy(saved.path);
-
-      // 插入用户图片消息（识别中）
-      final conversationProvider = Provider.of<ConversationProvider>(
-        context,
-        listen: false,
-      );
-      
-      final content = isAutoCapture 
-          ? '[自动拍照 #$_photoCount - 识别中...]' 
-          : '[手动拍照 - 识别中...]';
-      
-      await conversationProvider.addMessage(
-        conversationId: widget.conversation.id,
-        role: MessageRole.user,
-        content: content,
-        isImage: true,
-        imageLocalPath: saved.path,
-      );
-
-      // 读取小智配置以复用认证
-      final configProvider = Provider.of<ConfigProvider>(context, listen: false);
-      final xiaozhiConfig = configProvider.xiaozhiConfigs.firstWhere(
-        (c) => c.id == widget.conversation.configId,
-      );
-
-      // 视觉服务调用
-      final vs = VisionService(
-        visionUrl: 'http://183.251.85.225:8003/mcp/vision/explain',
-        authToken: _xiaozhiService!.getAuthToken(),
-        deviceId: xiaozhiConfig.macAddress,
-        clientId: 'android-client',
-      );
-
-      final prompt = isAutoCapture 
-          ? '请简要分析这张自动拍摄的图片内容'
-          : '请识别这张图片的内容';
-
-      final responseText = await vs.analyzeImage(
-        saved,
-        question: prompt,
-      );
-
-      // Unicode解码处理
-      String decodedResponse = _decodeUnicodeString(responseText);
-
-      // 插入助手消息
-      await conversationProvider.addMessage(
-        conversationId: widget.conversation.id,
-        role: MessageRole.assistant,
-        content: decodedResponse,
-      );
-      
-      if (!isAutoCapture) {
-        _scrollToBottom();
-      }
-    } catch (e) {
-      if (!isAutoCapture) {
-        _showCustomSnackbar('图片识别失败: $e');
-      }
-      print('拍照识别失败: $e');
-    }
   }
 
   // 处理来自CameraPane的拍照结果
@@ -2045,5 +1672,362 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     return result.toString();
+  }
+
+  // 查询设备数据的示例方法
+  Future<void> _queryDeviceData() async {
+    try {
+      // 查询温度数据（时间移动平均）
+      final tempResponse = await _influxDBService.query(
+        field: 'temperature',
+        mode: 'tma2m',
+        deviceId: '84F7035346E0', // 可以从配置中获取
+      );
+
+      if (tempResponse.hasError) {
+        _showCustomSnackbar('数据查询失败: ${tempResponse.error}');
+        return;
+      }
+
+      if (tempResponse.hasResults) {
+        final results = tempResponse.results!;
+        _showCustomSnackbar('查询到 ${results.length} 条温度数据');
+        
+        // 处理查询结果
+        for (final result in results) {
+          if (result is Map<String, dynamic>) {
+            print('时间: ${result['_time']}, 温度: ${result['_value']}');
+          }
+        }
+      } else {
+        _showCustomSnackbar('未查询到数据');
+      }
+    } catch (e) {
+      _showCustomSnackbar('查询异常: $e');
+    }
+  }
+
+  // 查询湿度数据（最近平均值）
+  Future<void> _queryHumidityData() async {
+    try {
+      final response = await _influxDBService.query(
+        field: 'humidity',
+        mode: 'mean5m',
+      );
+
+      if (response.hasResults) {
+        final results = response.results as List<Map<String, String>>;
+        for (final result in results) {
+          print('湿度平均值: ${result['_value']}');
+        }
+      }
+    } catch (e) {
+      print('湿度查询失败: $e');
+    }
+  }
+
+  // 自定义查询
+  Future<void> _customQuery() async {
+    const customQuery = '''
+from(bucket: "vitals_data")
+  |> range(start: -1h)
+  |> filter(fn: (r) => r["device_id"] == "84F7035346E0")
+  |> filter(fn: (r) => r["_field"] == "heart_rate")
+  |> last()
+''';
+
+    final response = await _influxDBService.query(query: customQuery);
+    
+    if (response.hasResults) {
+      print('最新心率数据: ${response.results}');
+    }
+  }
+
+  // 测试 InfluxDB 数据获取
+  Future<void> _testInfluxDBData() async {
+    try {
+      print('开始测试 InfluxDB 数据获取...');
+
+      // 测试1: 查询温度数据 (时间移动平均)
+      print('\n=== 测试1: 温度数据 (tma2m) ===');
+      final tempResponse = await _influxDBService.query(
+        field: 'temperature',
+        mode: 'tma2m',
+        deviceId: '84F7035346E0',
+      );
+      
+      print('Temperature Response:');
+      print('- hasError: ${tempResponse.hasError}');
+      print('- hasResults: ${tempResponse.hasResults}');
+      if (tempResponse.hasError) {
+        print('- error: ${tempResponse.error}');
+      }
+      if (tempResponse.hasResults) {
+        print('- results count: ${tempResponse.results?.length}');
+        print('- results type: ${tempResponse.results.runtimeType}');
+        print('- results full data: ${tempResponse.results}');
+        
+        // 详细打印前几条数据
+        final results = tempResponse.results as List;
+        for (int i = 0; i < (results.length > 3 ? 3 : results.length); i++) {
+          print('  [$i]: ${results[i]} (type: ${results[i].runtimeType})');
+          if (results[i] is Map) {
+            final map = results[i] as Map;
+            map.forEach((key, value) {
+              print('    $key: $value (${value.runtimeType})');
+            });
+          }
+        }
+      }
+      
+      // 测试2: 查询湿度数据 (平均值)
+      print('\n=== 测试2: 湿度数据 (mean5m) ===');
+      final humidityResponse = await _influxDBService.query(
+        field: 'humidity',
+        mode: 'mean5m',
+        deviceId: '84F7035346E0',
+      );
+      
+      print('Humidity Response:');
+      print('- hasError: ${humidityResponse.hasError}');
+      print('- hasResults: ${humidityResponse.hasResults}');
+      if (humidityResponse.hasError) {
+        print('- error: ${humidityResponse.error}');
+      }
+      if (humidityResponse.hasResults) {
+        print('- results: ${humidityResponse.results}');
+      }
+      
+      // 测试3: 自定义查询
+      print('\n=== 测试3: 自定义查询 (最新心率) ===');
+      const customQuery = '''
+from(bucket: "vitals_data")
+  |> range(start: -1h)
+  |> filter(fn: (r) => r["device_id"] == "84F7035346E0")
+  |> filter(fn: (r) => r["_field"] == "heart_rate")
+  |> last()
+''';
+      
+      final customResponse = await _influxDBService.query(query: customQuery);
+      print('Custom Query Response:');
+      print('- hasError: ${customResponse.hasError}');
+      print('- hasResults: ${customResponse.hasResults}');
+      if (customResponse.hasError) {
+        print('- error: ${customResponse.error}');
+      }
+      if (customResponse.hasResults) {
+        print('- results: ${customResponse.results}');
+      }
+      
+      // 测试4: 查询所有可用字段
+      print('\n=== 测试4: 查询所有字段 ===');
+      const allFieldsQuery = '''
+from(bucket: "vitals_data")
+  |> range(start: -10m)
+  |> filter(fn: (r) => r["device_id"] == "84F7035346E0")
+  |> keep(columns: ["_time", "_field", "_value"])
+  |> limit(n: 20)
+''';
+      
+      final allFieldsResponse = await _influxDBService.query(query: allFieldsQuery);
+      print('All Fields Response:');
+      print('- hasError: ${allFieldsResponse.hasError}');
+      print('- hasResults: ${allFieldsResponse.hasResults}');
+      if (allFieldsResponse.hasResults) {
+        print('- results: ${allFieldsResponse.results}');
+      }
+      
+      // 在聊天中显示测试结果摘要
+      final conversationProvider = Provider.of<ConversationProvider>(context, listen: false);
+      
+      String summary = '📊 InfluxDB 数据测试结果:\n\n';
+      summary += '🌡️ 温度数据: ${tempResponse.hasResults ? '✅ ${tempResponse.results?.length} 条记录' : '❌ ${tempResponse.error ?? '无数据'}'}\n';
+      summary += '💧 湿度数据: ${humidityResponse.hasResults ? '✅ 有数据' : '❌ ${humidityResponse.error ?? '无数据'}'}\n';
+      summary += '❤️ 心率数据: ${customResponse.hasResults ? '✅ 有数据' : '❌ ${customResponse.error ?? '无数据'}'}\n';
+      summary += '📈 所有字段: ${allFieldsResponse.hasResults ? '✅ ${allFieldsResponse.results?.length} 条记录' : '❌ ${allFieldsResponse.error ?? '无数据'}'}\n\n';
+      summary += '详细数据请查看控制台输出';
+      
+      await conversationProvider.addMessage(
+        conversationId: widget.conversation.id,
+        role: MessageRole.assistant,
+        content: summary,
+      );
+      
+      _scrollToBottom();
+      _showCustomSnackbar('InfluxDB 数据测试完成，请查看控制台');
+      
+    } catch (e) {
+      print('InfluxDB 测试异常: $e');
+      _showCustomSnackbar('InfluxDB 测试失败: $e');
+    }
+  }
+
+  // 修改数据命令处理，添加测试功能
+  Future<void> _handleDataCommand(String command) async {
+    _textController.clear();
+
+    // 添加用户命令消息
+    final conversationProvider = Provider.of<ConversationProvider>(context, listen: false);
+    await conversationProvider.addMessage(
+      conversationId: widget.conversation.id,
+      role: MessageRole.user,
+      content: command,
+    );
+
+    try {
+      // 特殊命令：测试完整数据
+      if (command.toLowerCase().contains('test') || command.toLowerCase().contains('测试')) {
+        await _testInfluxDBData();
+        return;
+      }
+      
+      // 特殊命令：查看原始响应
+      if (command.toLowerCase().contains('raw') || command.toLowerCase().contains('原始')) {
+        await _testRawInfluxDBResponse();
+        return;
+      }
+
+      String? field;
+      String mode = 'mean5m';
+
+      // 解析命令参数
+      if (command.contains('temperature') || command.contains('温度')) {
+        field = 'temperature';
+      } else if (command.contains('humidity') || command.contains('湿度')) {
+        field = 'humidity';
+      } else if (command.contains('heart_rate') || command.contains('心率')) {
+        field = 'heart_rate';
+      }
+
+      if (command.contains('history') || command.contains('历史')) {
+        mode = 'tma2m';
+      }
+
+      if (field != null) {
+        final response = await _influxDBService.query(
+          field: field,
+          mode: mode,
+        );
+
+        String resultText;
+        if (response.hasError) {
+          resultText = '数据查询失败: ${response.error}';
+        } else if (response.hasResults) {
+          final results = response.results as List;
+          if (results.isNotEmpty) {
+            resultText = '找到 ${results.length} 条 $field 数据记录\n\n';
+            
+            // 显示最新的几条数据
+            final showCount = results.length > 5 ? 5 : results.length;
+            for (int i = 0; i < showCount; i++) {
+              final record = results[i];
+              if (record is Map<String, dynamic>) {
+                final time = record['_time'] ?? 'N/A';
+                final value = record['_value'] ?? 'N/A';
+                resultText += '${i + 1}. 时间: $time, 值: $value\n';
+              } else {
+                resultText += '${i + 1}. $record\n';
+              }
+            }
+            
+            if (results.length > 5) {
+              resultText += '\n... 还有 ${results.length - 5} 条记录';
+            }
+          } else {
+            resultText = '未找到$field数据';
+          }
+        } else {
+          resultText = '未查询到数据';
+        }
+
+        // 添加系统响应
+        await conversationProvider.addMessage(
+          conversationId: widget.conversation.id,
+          role: MessageRole.assistant,
+          content: resultText,
+        );
+      } else {
+        await conversationProvider.addMessage(
+          conversationId: widget.conversation.id,
+          role: MessageRole.assistant,
+          content: '支持的数据查询命令:\n'
+              '/data temperature - 温度数据\n'
+              '/data humidity - 湿度数据\n'
+              '/data heart_rate - 心率数据\n'
+              '/data test - 完整数据测试\n'
+              '/data raw - 原始响应测试\n'
+              '添加 history 查看历史趋势',
+        );
+      }
+    } catch (e) {
+      await conversationProvider.addMessage(
+        conversationId: widget.conversation.id,
+        role: MessageRole.assistant,
+        content: '数据查询异常: $e',
+      );
+    }
+
+    _scrollToBottom();
+  }
+  
+  // 测试原始 HTTP 响应
+  Future<void> _testRawInfluxDBResponse() async {
+    try {
+      print('\n=== 原始 InfluxDB HTTP 响应测试 ===');
+      
+      // 直接测试 HTTP 请求
+      final queryUrl = Uri.parse('${_influxDBService.influxUrl}/api/v2/query');
+      final queryParams = {'org': _influxDBService.influxOrg};
+      final finalUrl = queryUrl.replace(queryParameters: queryParams);
+      
+      const testQuery = '''
+from(bucket: "vitals_data")
+  |> range(start: -5m)
+  |> filter(fn: (r) => r["device_id"] == "84F7035346E0")
+  |> limit(n: 5)
+''';
+      
+      final requestBody = json.encode({'query': testQuery});
+      
+      print('Request URL: $finalUrl');
+      print('Request Headers: Authorization: Token ${_influxDBService.influxToken.substring(0, 20)}...');
+      print('Request Body: $requestBody');
+      
+      final response = await http.post(
+        finalUrl,
+        headers: {
+          'Authorization': 'Token ${_influxDBService.influxToken}',
+          'Accept': 'text/csv',
+          'Content-Type': 'application/json',
+          'User-Agent': 'Flutter-Android-Client/1.0',
+        },
+        body: requestBody,
+      ).timeout(const Duration(seconds: 30));
+      
+      print('\nRaw Response:');
+      print('Status Code: ${response.statusCode}');
+      print('Headers: ${response.headers}');
+      print('Body Length: ${response.body.length}');
+      print('Body Content:');
+      print('--- START ---');
+      print(response.body);
+      print('--- END ---');
+      
+      // 在聊天中显示原始响应摘要
+      final conversationProvider = Provider.of<ConversationProvider>(context, listen: false);
+      await conversationProvider.addMessage(
+        conversationId: widget.conversation.id,
+        role: MessageRole.assistant,
+        content: '🔍 原始 InfluxDB 响应:\n\n'
+            '状态码: ${response.statusCode}\n'
+            '内容类型: ${response.headers['content-type']}\n'
+            '响应长度: ${response.body.length} 字符\n\n'
+            '完整响应内容请查看控制台输出',
+      );
+      
+    } catch (e) {
+      print('原始响应测试异常: $e');
+      _showCustomSnackbar('原始响应测试失败: $e');
+    }
   }
 }
