@@ -52,6 +52,12 @@ final List<Experiment> experiments = [
             '3. 观察温度数据实时更新\n'
             '4. 可输入 /query temp 查询数据',
       ),
+      ExperimentStep(
+        index: 4,
+        name: '开始采集',
+        instruction: '1. 在聊天界面输入 /start temp\n',
+            
+      ),
     ],
   ),
   Experiment(

@@ -78,6 +78,8 @@ class _ChatScreenState extends State<ChatScreen> {
   int _currentStepIndex = 0;
   PageController? _stepsPageController;
   bool _showStepDetails = false;
+  ScrollController _stepsScrollController = ScrollController(); // 新增：步骤列表滚动控制器
+  int? _expandedStepIndex; // 新增：当前展开的步骤索引
 
   @override
   void initState() {
@@ -285,6 +287,7 @@ from(bucket: "vitals_data")
     _autoPhotoTimer?.cancel(); // 取消自动拍照定时器
     _vitalsTimer?.cancel();
     _stepsPageController?.dispose();
+    _stepsScrollController.dispose(); // 新增：释放滚动控制器
 
     if (_xiaozhiService != null) {
       _xiaozhiService!.stopPlayback();
@@ -485,8 +488,7 @@ from(bucket: "vitals_data")
 
     final steps = _selectedExperiment!.steps;
     const double itemHeight = 46.0;
-    // 固定高度，保证能同时显示三个项（含间距）
-    final double containerHeight = itemHeight * 3 + 24;
+    final double containerHeight = itemHeight * 3 + 24; // 固定高度
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -495,11 +497,7 @@ from(bucket: "vitals_data")
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 2)),
         ],
       ),
       child: Column(
@@ -511,11 +509,7 @@ from(bucket: "vitals_data")
               Expanded(
                 child: Text(
                   '实验: ${_selectedExperiment!.name}',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -525,6 +519,7 @@ from(bucket: "vitals_data")
                 onPressed: () {
                   setState(() {
                     _selectedExperiment = null;
+                    _expandedStepIndex = null;
                     _showStepDetails = false;
                   });
                 },
@@ -536,134 +531,131 @@ from(bucket: "vitals_data")
           ),
           const SizedBox(height: 8),
 
-          // 步骤纵向列表（固定高度，最多可见3个，超过可滚动）
+          // 列表 + 滚动条提示（固定高度）
           SizedBox(
             height: containerHeight,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
+            child: Scrollbar(
+              controller: _stepsScrollController,
+              thumbVisibility: true, // 始终显示滚动条拇指以提示可滚动
+              trackVisibility: true,
+              thickness: 4,
+              radius: const Radius.circular(6),
               child: ListView.separated(
+                controller: _stepsScrollController,
                 physics: const BouncingScrollPhysics(),
                 itemCount: steps.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 6),
                 padding: EdgeInsets.zero,
                 itemBuilder: (context, index) {
                   final step = steps[index];
-                  final isActive = index == _currentStepIndex;
+                  final isActive = index == _expandedStepIndex;
 
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        // 切换当前步骤，并展开详情
-                        _currentStepIndex = index;
-                        _showStepDetails = true;
-                      });
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 220),
-                      height: itemHeight,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color:
-                            isActive
-                                ? Colors.blue.shade50
-                                : Colors.grey.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color:
-                              isActive
-                                  ? Colors.blue.shade300
-                                  : Colors.transparent,
-                          width: 1.5,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 30,
-                            height: 30,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color:
-                                  isActive ? Colors.blue : Colors.grey.shade400,
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // 步骤条
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            // 同步当前步骤索引，用于高亮
+                            _currentStepIndex = index;
+                            // 就地展开/折叠
+                            _expandedStepIndex = isActive ? null : index;
+                            _showStepDetails = _expandedStepIndex != null;
+                          });
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 220),
+                          height: itemHeight,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: isActive ? Colors.blue.shade50 : Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isActive ? Colors.blue.shade300 : Colors.transparent,
+                              width: 1.5,
                             ),
-                            child: Center(
-                              child: Text(
-                                '${step.index}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 30,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: isActive ? Colors.blue : Colors.grey.shade400,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    '${step.index}',
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              step.name,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color:
-                                    isActive
-                                        ? Colors.blue.shade800
-                                        : Colors.grey.shade700,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  step.name,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: isActive ? Colors.blue.shade800 : Colors.grey.shade700,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                              Icon(
+                                isActive ? Icons.expand_less : Icons.chevron_right,
+                                color: isActive ? Colors.blue : Colors.grey.shade500,
+                                size: 20,
+                              ),
+                            ],
                           ),
-                          Icon(
-                            isActive ? Icons.expand_less : Icons.chevron_right,
-                            color:
-                                isActive ? Colors.blue : Colors.grey.shade500,
-                            size: 20,
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
+
+                      // 就地展开的说明（在该步骤下方显示）
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeInOut,
+                        child: isActive
+                            ? Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: Colors.blue.shade100),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${step.index}. ${step.name}',
+                                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.blue),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        step.instruction,
+                                        style: TextStyle(fontSize: 13, color: Colors.grey.shade800, height: 1.5),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
                   );
                 },
               ),
             ),
           ),
 
-          // 步骤详细说明（展开）
-          if (_showStepDetails && _currentStepIndex < steps.length)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.blue.shade100),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${steps[_currentStepIndex].index}. ${steps[_currentStepIndex].name}',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.blue,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      steps[_currentStepIndex].instruction,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade800,
-                        height: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          // 移除底部统一详情块（不再在最下方弹出）
+          // ...已删除原先的 if (_showStepDetails ...) 底部说明...
         ],
       ),
     );
@@ -855,7 +847,6 @@ from(bucket: "vitals_data")
     }
   }
 
-  // ...existing code...
   Widget _buildVitalsBar() {
     final hr = _heartRateBpm != null ? _heartRateBpm!.toStringAsFixed(0) : '—';
     final rr = _respirationBpm != null ? _respirationBpm!.toStringAsFixed(0) : '—';
@@ -930,7 +921,7 @@ from(bucket: "vitals_data")
       ),
     );
   }
-  // ...existing code...
+
   @override
   Widget build(BuildContext context) {
     // 确保状态栏设置正确
@@ -3017,8 +3008,7 @@ from(bucket: "vitals_data")
         await conversationProvider.addMessage(
           conversationId: widget.conversation.id,
           role: MessageRole.assistant,
-          content:
-              '支持的数据查询命令:\n'
+          content: '支持的数据查询命令:\n'
               '/data temperature - 温度数据\n'
               '/data humidity - 湿度数据\n'
               '/data heart_rate - 心率数据\n'
