@@ -155,22 +155,68 @@ class _ChatScreenState extends State<ChatScreen> {
     // 初始化 InfluxDB 服务
     _influxDBService = InfluxDBService();
 
-    // 页面首帧后
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      _influxSmokeTest();      // 你已有的冒烟测试（可保留）
-      _startVitalsPolling();   // 开始每5s轮询体征
+    // 🔥 重要：先初始化所有核心服务，再处理UI
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    // 标记对话为已读
+    Provider.of<ConversationProvider>(context, listen: false)
+        .markConversationAsRead(widget.conversation.id);
 
-      // 如果是小智对话且未选择实验，显示选择对话框
-      if (widget.conversation.type == ConversationType.xiaozhi && 
-          _selectedExperiment == null && mounted) {
-        _showExperimentSelectionDialog();
-      }
-    });
-    // 初始化步骤页面控制器
-    _stepsPageController = PageController(viewportFraction: 0.9);
+    // 1. 首先初始化核心服务（小智/Dify）
+    if (widget.conversation.type == ConversationType.xiaozhi) {
+      // 🚀 优先初始化小智服务和WebSocket连接
+      await _initXiaozhiService();
+      
+      // 添加连接状态监控
+      _connectionCheckTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+        if (mounted && _xiaozhiService != null) {
+          final wasConnected = _xiaozhiService!.isConnected;
+          setState(() {});
 
-  }
+          if (wasConnected && !_xiaozhiService!.isConnected && _autoReconnectTimer == null) {
+            print('检测到连接断开，准备自动重连');
+            _scheduleReconnect();
+          }
+        }
+      });
 
+      // 默认启用语音输入模式
+      setState(() {
+        _isVoiceInputMode = true;
+      });
+      
+      // ✅ WebSocket连接成功后，再显示实验选择
+      _scheduleExperimentSelection();
+      
+    } else if (widget.conversation.type == ConversationType.dify) {
+      _initDifyService();
+    }
+
+    // 2. 然后启动其他服务
+    _influxSmokeTest();
+    _startVitalsPolling();
+
+    // 3. 处理横屏摄像头
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    if (isLandscape && mounted) {
+      setState(() => _showCameraPane = true);
+    }
+  });
+
+  // 初始化步骤页面控制器
+  _stepsPageController = PageController(viewportFraction: 0.9);
+}
+
+// 🆕 延迟显示实验选择对话框
+void _scheduleExperimentSelection() {
+  // 等待WebSocket连接稳定后再显示
+  Timer(const Duration(seconds: 1), () {
+    if (mounted && 
+        _selectedExperiment == null && 
+        _xiaozhiService?.isConnected == true) {
+      _showExperimentSelectionDialog();
+    }
+  });
+}
   Future<void> _influxSmokeTest() async {
     logInflux('SmokeTest: start');
     const q = '''
