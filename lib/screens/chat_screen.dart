@@ -24,6 +24,7 @@ import 'package:ai_assistant/providers/config_provider.dart';
 import 'package:ai_assistant/widgets/message_bubble.dart';
 import 'package:ai_assistant/screens/voice_call_screen.dart';
 import 'package:ai_assistant/widgets/camera_pane.dart';
+import 'package:ai_assistant/models/experiment.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -71,6 +72,12 @@ class _ChatScreenState extends State<ChatScreen> {
   double? _heartRateBpm;
   double? _respirationBpm;
   DateTime? _vitalsUpdatedAt;
+
+  // 实验相关
+  Experiment? _selectedExperiment;
+  int _currentStepIndex = 0;
+  PageController? _stepsPageController;
+  bool _showStepDetails = false;
 
   @override
   void initState() {
@@ -149,10 +156,19 @@ class _ChatScreenState extends State<ChatScreen> {
     _influxDBService = InfluxDBService();
 
     // 页面首帧后
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       _influxSmokeTest();      // 你已有的冒烟测试（可保留）
       _startVitalsPolling();   // 开始每5s轮询体征
+
+      // 如果是小智对话且未选择实验，显示选择对话框
+      if (widget.conversation.type == ConversationType.xiaozhi && 
+          _selectedExperiment == null && mounted) {
+        _showExperimentSelectionDialog();
+      }
     });
+    // 初始化步骤页面控制器
+    _stepsPageController = PageController(viewportFraction: 0.9);
+
   }
 
   Future<void> _influxSmokeTest() async {
@@ -214,6 +230,7 @@ from(bucket: "vitals_data")
     _waveAnimationTimer?.cancel();
     _autoPhotoTimer?.cancel(); // 取消自动拍照定时器
     _vitalsTimer?.cancel();
+    _stepsPageController?.dispose();
 
     if (_xiaozhiService != null) {
       _xiaozhiService!.stopPlayback();
@@ -222,7 +239,293 @@ from(bucket: "vitals_data")
 
     super.dispose();
   }
+  // 显示实验选择对话框（改为下拉选择 + 确认）
+  void _showExperimentSelectionDialog() {
+    Experiment? tempSelected = experiments.isNotEmpty ? experiments.first : null;
 
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: StatefulBuilder(builder: (context, setStateDialog) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '选择实验项目',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '请选择要进行的实验',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 下拉选择 - 添加容器限制高度
+                  Flexible(
+                    child: Container(
+                      constraints: const BoxConstraints(
+                        maxHeight: 200, // 限制下拉框最大高度
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: DropdownButtonFormField<Experiment>(
+                        value: tempSelected,
+                        isExpanded: true,
+                        menuMaxHeight: 300, // 限制下拉菜单最大高度
+                        items: experiments.map((exp) {
+                          return DropdownMenuItem<Experiment>(
+                            value: exp,
+                            child: Container(
+                              constraints: const BoxConstraints(
+                                maxHeight: 80, // 限制单个选项的最大高度
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    exp.name, 
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    exp.description, 
+                                    style: TextStyle(
+                                      fontSize: 12, 
+                                      color: Colors.grey.shade600,
+                                    ),
+                                    maxLines: 2, // 限制描述最多2行
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (v) {
+                          setStateDialog(() {
+                            tempSelected = v;
+                          });
+                        },
+                        decoration: const InputDecoration.collapsed(hintText: ''),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: TextButton.styleFrom(
+                            backgroundColor: Colors.grey.shade100,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: const Text('取消', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: tempSelected == null
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _selectedExperiment = tempSelected;
+                                    _currentStepIndex = 0;
+                                    _showStepDetails = false;
+                                  });
+                                  Navigator.pop(context);
+                                },
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: const Text('确认', style: TextStyle(fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            }),
+          ),
+        );
+      },
+    );
+  }
+  
+  // 构建实验步骤容器（纵向，从上到下展示，容器高度固定，最多展示3个可见项）
+  Widget _buildExperimentStepsBar() {
+    if (_selectedExperiment == null) return const SizedBox.shrink();
+
+    final steps = _selectedExperiment!.steps;
+    const double itemHeight = 46.0;
+    // 固定高度，保证能同时显示三个项（含间距）
+    final double containerHeight = itemHeight * 3 + 24;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 标题和关闭
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '实验: ${_selectedExperiment!.name}',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: () {
+                  setState(() {
+                    _selectedExperiment = null;
+                    _showStepDetails = false;
+                  });
+                },
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                splashRadius: 16,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // 步骤纵向列表（固定高度，最多可见3个，超过可滚动）
+          SizedBox(
+            height: containerHeight,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: ListView.separated(
+                physics: const BouncingScrollPhysics(),
+                itemCount: steps.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 6),
+                padding: EdgeInsets.zero,
+                itemBuilder: (context, index) {
+                  final step = steps[index];
+                  final isActive = index == _currentStepIndex;
+
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        // 切换当前步骤，并展开详情
+                        _currentStepIndex = index;
+                        _showStepDetails = true;
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      height: itemHeight,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: isActive ? Colors.blue.shade50 : Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: isActive ? Colors.blue.shade300 : Colors.transparent, width: 1.5),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: isActive ? Colors.blue : Colors.grey.shade400,
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${step.index}',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              step.name,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: isActive ? Colors.blue.shade800 : Colors.grey.shade700,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Icon(
+                            isActive ? Icons.expand_less : Icons.chevron_right,
+                            color: isActive ? Colors.blue : Colors.grey.shade500,
+                            size: 20,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+
+          // 步骤详细说明（展开）
+          if (_showStepDetails && _currentStepIndex < steps.length)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.blue.shade100),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${steps[_currentStepIndex].index}. ${steps[_currentStepIndex].name}',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.blue),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      steps[_currentStepIndex].instruction,
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade800, height: 1.5),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
   // 初始化小智服务
   Future<void> _initXiaozhiService() async {
     final configProvider = Provider.of<ConfigProvider>(context, listen: false);
@@ -426,12 +729,14 @@ from(bucket: "vitals_data")
       rrColor = Colors.blue;
     }
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+    return SizedBox(
+      height: 40,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Row(
@@ -448,6 +753,7 @@ from(bucket: "vitals_data")
           const SizedBox(width: 4),
           Text(ts, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
         ],
+      ),
       ),
     );
   }
@@ -686,8 +992,8 @@ from(bucket: "vitals_data")
       return Column(
         children: [
           if (widget.conversation.type == ConversationType.xiaozhi) _buildXiaozhiInfo(),
-          // 移除：体征条不再显示在聊天区域
-          // _buildVitalsBar(),
+          // 新增：实验步骤容器
+          if (_selectedExperiment != null) _buildExperimentStepsBar(),
           Expanded(child: _buildMessageList()),
           _buildInputArea(),
         ],
@@ -701,8 +1007,8 @@ from(bucket: "vitals_data")
           child: Column(
             children: [
               if (widget.conversation.type == ConversationType.xiaozhi) _buildXiaozhiInfo(),
-              // 移除：体征条不再显示在聊天区域
-              // _buildVitalsBar(),
+              // 新增：实验步骤容器
+              if (_selectedExperiment != null) _buildExperimentStepsBar(),
               Expanded(child: _buildMessageList()),
               _buildInputArea(),
             ],
