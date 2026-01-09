@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 
 class CameraXBridge {
   static MethodChannel? _channel;
@@ -18,11 +19,12 @@ class CameraXBridge {
   }
 }
 
-class CameraXRightPreview extends StatelessWidget {
+class CameraXRightPreview extends StatefulWidget {
   final String lensFacing;           // 'back' | 'front' | 'external'
   final String implementationMode;   // 'PERFORMANCE' | 'COMPATIBLE'
   final String scaleType;            // 'FILL_CENTER' | 'FIT_CENTER' 等
-  final double? width;               // null 表示占满父布局
+  final double? width;
+  final double? height;
 
   const CameraXRightPreview({
     super.key,
@@ -30,7 +32,15 @@ class CameraXRightPreview extends StatelessWidget {
     this.implementationMode = 'PERFORMANCE',
     this.scaleType = 'FILL_CENTER',
     this.width,
+    this.height,
   });
+
+  @override
+  State<CameraXRightPreview> createState() => _CameraXRightPreviewState();
+}
+
+class _CameraXRightPreviewState extends State<CameraXRightPreview> {
+  int? _viewId;
 
   @override
   Widget build(BuildContext context) {
@@ -40,22 +50,54 @@ class CameraXRightPreview extends StatelessWidget {
       );
     }
 
-    // 使用 LayoutBuilder 获取父容器约束，确保摄像头预览不会溢出
     return LayoutBuilder(
       builder: (context, constraints) {
+        final effectiveWidth = widget.width ?? 
+            (constraints.maxWidth.isFinite ? constraints.maxWidth : 400);
+        final effectiveHeight = widget.height ?? 
+            (constraints.maxHeight.isFinite ? constraints.maxHeight : 300);
+
+        debugPrint('CameraXRightPreview 尺寸: ${effectiveWidth}x$effectiveHeight');
+
+        // 使用 PlatformViewLink 实现 Hybrid Composition
         return SizedBox(
-          width: width ?? constraints.maxWidth,
-          height: constraints.maxHeight,
-          child: AndroidView(
+          width: effectiveWidth,
+          height: effectiveHeight,
+          child: PlatformViewLink(
             viewType: 'camerax/right_preview',
-            creationParams: {
-              'lensFacing': lensFacing,
-              'implementationMode': implementationMode,
-              'scaleType': scaleType,
+            surfaceFactory: (context, controller) {
+              return AndroidViewSurface(
+                controller: controller as AndroidViewController,
+                gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+                hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+              );
             },
-            creationParamsCodec: const StandardMessageCodec(),
-            onPlatformViewCreated: (int viewId) {
-              CameraXBridge.attach(viewId);
+            onCreatePlatformView: (params) {
+              debugPrint('CameraXRightPreview: 创建 PlatformView, id=${params.id}');
+              
+              return PlatformViewsService.initSurfaceAndroidView(
+                id: params.id,
+                viewType: 'camerax/right_preview',
+                layoutDirection: TextDirection.ltr,
+                creationParams: {
+                  'lensFacing': widget.lensFacing,
+                  'implementationMode': widget.implementationMode,
+                  'scaleType': widget.scaleType,
+                  'width': effectiveWidth.toInt(),
+                  'height': effectiveHeight.toInt(),
+                },
+                creationParamsCodec: const StandardMessageCodec(),
+                onFocus: () {
+                  params.onFocusChanged(true);
+                },
+              )
+                ..addOnPlatformViewCreatedListener((viewId) {
+                  debugPrint('CameraXRightPreview: PlatformView 创建成功, viewId=$viewId');
+                  params.onPlatformViewCreated(viewId);
+                  setState(() => _viewId = viewId);
+                  CameraXBridge.attach(viewId);
+                })
+                ..create();
             },
           ),
         );

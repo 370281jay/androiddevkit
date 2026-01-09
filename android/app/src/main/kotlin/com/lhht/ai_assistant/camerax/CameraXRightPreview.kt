@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Environment
 import android.util.Log
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -26,49 +27,69 @@ class CameraXRightPreviewFactory(
 ) : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
 
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView {
-        @Suppress("UNCHECKED_CAST")
-        val params = (args as? Map<String, Any?>) ?: emptyMap()
-        return CameraXRightPreviewView(activity, messenger, viewId, params)
+        val params = args as? Map<*, *> ?: emptyMap<String, Any>()
+        return CameraXRightPreviewImpl(activity, viewId, messenger, params)
     }
 }
 
-class CameraXRightPreviewView(
+class CameraXRightPreviewImpl(
     private val activity: FlutterActivity,
-    messenger: BinaryMessenger,
     viewId: Int,
-    private val params: Map<String, Any?>
+    messenger: BinaryMessenger,
+    params: Map<*, *>
 ) : PlatformView {
 
-    private val container: FrameLayout = FrameLayout(activity)
-    private val previewView: PreviewView = PreviewView(activity)
-    private val controller: LifecycleCameraController = LifecycleCameraController(activity)
-    private val channel = MethodChannel(messenger, "camerax/right_preview/$viewId")
-
-    init {
-        container.layoutParams = FrameLayout.LayoutParams(
+    private val TAG = "CameraXRightPreview"
+    
+    // 使用 FrameLayout 作为容器，确保 PreviewView 正确约束
+    private val container: FrameLayout = FrameLayout(activity).apply {
+        layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        setBackgroundColor(android.graphics.Color.BLACK)
+    }
+    
+    private val previewView: PreviewView = PreviewView(activity).apply {
+        layoutParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
         )
+        // 设置缩放类型
+        scaleType = PreviewView.ScaleType.FILL_CENTER
+        implementationMode = PreviewView.ImplementationMode.PERFORMANCE
+    }
+    
+    private val controller: LifecycleCameraController = LifecycleCameraController(activity)
+    private val channel: MethodChannel = MethodChannel(messenger, "camerax/right_preview/$viewId")
 
-        val implMode = (params["implementationMode"] as? String) ?: "PERFORMANCE"
-        previewView.implementationMode =
-            if (implMode.equals("COMPATIBLE", true))
-                PreviewView.ImplementationMode.COMPATIBLE
-            else
-                PreviewView.ImplementationMode.PERFORMANCE
+    init {
+        Log.d(TAG, "初始化 CameraXRightPreview, viewId=$viewId, params=$params")
+        
+        val lensFacing = params["lensFacing"] as? String ?: "back"
+        val implMode = params["implementationMode"] as? String ?: "PERFORMANCE"
+        val scaleTypeStr = params["scaleType"] as? String ?: "FILL_CENTER"
+        val width = params["width"] as? Int
+        val height = params["height"] as? Int
+        
+        Log.d(TAG, "参数: lensFacing=$lensFacing, implMode=$implMode, scaleType=$scaleTypeStr, size=${width}x$height")
 
-        val scaleType = (params["scaleType"] as? String) ?: "FILL_CENTER"
-        previewView.scaleType = when (scaleType.uppercase()) {
+        // 设置预览视图的实现模式
+        previewView.implementationMode = when (implMode) {
+            "COMPATIBLE" -> PreviewView.ImplementationMode.COMPATIBLE
+            else -> PreviewView.ImplementationMode.PERFORMANCE
+        }
+
+        // 设置缩放类型
+        previewView.scaleType = when (scaleTypeStr) {
             "FIT_CENTER" -> PreviewView.ScaleType.FIT_CENTER
             "FIT_START" -> PreviewView.ScaleType.FIT_START
             "FIT_END" -> PreviewView.ScaleType.FIT_END
-            "FILL_START" -> PreviewView.ScaleType.FILL_START
-            "FILL_END" -> PreviewView.ScaleType.FILL_END
             else -> PreviewView.ScaleType.FILL_CENTER
         }
 
-        val lens = (params["lensFacing"] as? String) ?: "back"
-        controller.cameraSelector = when (lens.lowercase()) {
+        // 选择摄像头
+        controller.cameraSelector = when (lensFacing) {
             "front" -> CameraSelector.DEFAULT_FRONT_CAMERA
             "external" -> CameraSelector.Builder()
                 .requireLensFacing(CameraSelector.LENS_FACING_EXTERNAL)
@@ -78,16 +99,26 @@ class CameraXRightPreviewView(
 
         // 开启预览 + 拍照用例
         controller.setEnabledUseCases(CameraController.IMAGE_CAPTURE)
-        controller.bindToLifecycle(activity)
-        previewView.controller = controller
+        
+        try {
+            controller.bindToLifecycle(activity)
+            previewView.controller = controller
+            Log.d(TAG, "摄像头绑定成功")
+        } catch (e: Exception) {
+            Log.e(TAG, "摄像头绑定失败: ${e.message}", e)
+            // 尝试使用后置摄像头作为备选
+            try {
+                controller.cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                controller.bindToLifecycle(activity)
+                previewView.controller = controller
+                Log.d(TAG, "使用后置摄像头作为备选")
+            } catch (e2: Exception) {
+                Log.e(TAG, "后置摄像头也失败: ${e2.message}", e2)
+            }
+        }
 
-        container.addView(
-            previewView,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        )
+        // 将 PreviewView 添加到容器
+        container.addView(previewView)
 
         // 方法通道：拍照
         channel.setMethodCallHandler { call, result ->
@@ -105,14 +136,17 @@ class CameraXRightPreviewView(
                             ContextCompat.getMainExecutor(activity),
                             object : ImageCapture.OnImageSavedCallback {
                                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                                    Log.d(TAG, "拍照成功: ${file.absolutePath}")
                                     result.success(mapOf("path" to file.absolutePath))
                                 }
                                 override fun onError(exception: ImageCaptureException) {
+                                    Log.e(TAG, "拍照失败: ${exception.message}", exception)
                                     result.error("capture_error", exception.message ?: "unknown error", null)
                                 }
                             }
                         )
                     } catch (t: Throwable) {
+                        Log.e(TAG, "拍照异常: ${t.message}", t)
                         result.error("capture_error", t.message ?: "unknown error", null)
                     }
                 }
@@ -121,13 +155,17 @@ class CameraXRightPreviewView(
         }
     }
 
-    override fun getView(): View = container
+    override fun getView(): View {
+        Log.d(TAG, "getView() 被调用, container大小: ${container.width}x${container.height}")
+        return container
+    }
 
     override fun dispose() {
+        Log.d(TAG, "dispose() 被调用")
         try {
             controller.unbind()
         } catch (t: Throwable) {
-            Log.w("CameraXRightPreview", "dispose error", t)
+            Log.w(TAG, "dispose error", t)
         }
     }
 }

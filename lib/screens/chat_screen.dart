@@ -1152,6 +1152,8 @@ from(bucket: "vitals_data")
     );
   }
 
+// 找到 _buildResponsiveBody 方法并替换为：
+
   Widget _buildResponsiveBody() {
     final isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
@@ -1167,118 +1169,149 @@ from(bucket: "vitals_data")
       );
     }
 
-        // 横屏：左侧消息，右侧摄像头
-    return Row(
-      children: [
-        // 左侧内容区（占 1/3）
-        Expanded(
-          flex: 1,
-          child: Column(
-            children: [
-              if (widget.conversation.type == ConversationType.xiaozhi)
-                _buildXiaozhiInfo(),
-              if (_selectedExperiment != null) _buildExperimentStepsBar(),
-              Expanded(child: _buildMessageList()),
-              _buildInputArea(),
-            ],
-          ),
-        ),
-        Container(width: 1, color: Colors.grey.withOpacity(0.2)),
-        // 右侧摄像头区（占 2/3）
-        Expanded(
-          flex: 2,
-          child: ClipRect(
-            child: _showCameraPane
-                ? Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // 摄像头预览 - 使用 Positioned.fill 确保填满容器
-                      Positioned.fill(
-                        child: Container(
-                          color: Colors.black,
-                          child: CameraXRightPreview(
-                            lensFacing: 'external',
-                            implementationMode: 'PERFORMANCE',
-                            scaleType: 'FILL_CENTER',
-                          ),
-                        ),
-                      ),
-                      // 体征数据条
-                      Positioned(
-                        top: 12,
-                        left: 12,
-                        right: 72,
-                        child: _buildVitalsBar(),
-                      ),
-                      // 控制按钮组
-                      Positioned(
-                        top: 16,
-                        right: 16,
-                        child: Column(
-                          children: [
-                            // 开关摄像头按钮
-                            Container(
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.6),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: IconButton(
-                                icon: Icon(
-                                  _showCameraPane ? Icons.videocam_off : Icons.videocam,
-                                  color: Colors.white,
-                                  size: 24,
-                                ),
-                                onPressed: () {
-                                  setState(() => _showCameraPane = !_showCameraPane);
-                                  if (!_showCameraPane) _stopAutoPhoto();
-                                },
-                                tooltip: _showCameraPane ? '关闭摄像头' : '打开摄像头',
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            // 自动拍照按钮
-                            if (widget.conversation.type == ConversationType.xiaozhi)
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.6),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: IconButton(
-                                  icon: Icon(
-                                    _autoPhotoEnabled ? Icons.timer_off : Icons.timer,
-                                    color: _autoPhotoEnabled ? Colors.red : Colors.white,
-                                    size: 24,
-                                  ),
-                                  onPressed: _toggleAutoPhoto,
-                                  tooltip: _autoPhotoEnabled ? '停止自动拍照' : '启动自动拍照',
-                                ),
-                              ),
-                            const SizedBox(height: 8),
-                            // 手动拍照按钮
-                            if (widget.conversation.type == ConversationType.xiaozhi)
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.6),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: IconButton(
-                                  icon: const Icon(Icons.camera_alt, color: Colors.white, size: 24),
-                                  onPressed: () => _captureFromCameraXAndSendToVision(isAuto: false),
-                                  tooltip: '手动拍照',
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  )
-                : _buildRightPlaceholder(),
-          ),
-        ),
-      ],
+    // 横屏：左侧消息，右侧摄像头
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final totalWidth = constraints.maxWidth;
+        final totalHeight = constraints.maxHeight;
+        final leftPaneWidth = totalWidth / 3;  // 左侧占 1/3
+        final rightPaneWidth = totalWidth * 2 / 3 - 1;  // 右侧占 2/3，减去分隔线
+        
+        debugPrint('横屏布局: total=${totalWidth}x$totalHeight, leftPane=$leftPaneWidth, rightPane=$rightPaneWidth');
+
+        return Stack(
+          children: [
+            // 左侧内容区（使用 Positioned 精确定位）
+            Positioned(
+              left: 0,
+              top: 0,
+              width: leftPaneWidth,
+              height: totalHeight,
+              child: Column(
+                children: [
+                  if (widget.conversation.type == ConversationType.xiaozhi)
+                    _buildXiaozhiInfo(),
+                  if (_selectedExperiment != null) _buildExperimentStepsBar(),
+                  Expanded(child: _buildMessageList()),
+                  _buildInputArea(),
+                ],
+              ),
+            ),
+            // 分隔线
+            Positioned(
+              left: leftPaneWidth,
+              top: 0,
+              width: 1,
+              height: totalHeight,
+              child: Container(color: Colors.grey.withOpacity(0.2)),
+            ),
+            // 右侧摄像头区（使用 Positioned 精确定位）
+            Positioned(
+              left: leftPaneWidth + 1,
+              top: 0,
+              width: rightPaneWidth,
+              height: totalHeight,
+              child: _showCameraPane
+                  ? _buildCameraArea(rightPaneWidth, totalHeight)
+                  : _buildRightPlaceholder(),
+            ),
+          ],
+        );
+      },
     );
   }
 
+  // 修改摄像头区域方法，传入明确的尺寸
+  Widget _buildCameraArea(double width, double height) {
+    debugPrint('摄像头区域尺寸: ${width}x$height');
+    
+    return Container(
+      width: width,
+      height: height,
+      color: Colors.black,
+      child: Stack(
+        children: [
+          // 摄像头预览 - 使用明确的尺寸
+          Positioned.fill(
+            child: CameraXRightPreview(
+              lensFacing: 'external',
+              implementationMode: 'PERFORMANCE',
+              scaleType: 'FILL_CENTER',
+              width: width,
+              height: height,
+            ),
+          ),
+          // 体征数据条
+          Positioned(
+            top: 12,
+            left: 12,
+            right: 72,
+            child: _buildVitalsBar(),
+          ),
+          // 控制按钮组
+          Positioned(
+            top: 16,
+            right: 16,
+            child: Column(
+              children: [
+                // 开关摄像头按钮
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    icon: Icon(
+                      _showCameraPane ? Icons.videocam_off : Icons.videocam,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                    onPressed: () {
+                      setState(() => _showCameraPane = !_showCameraPane);
+                      if (!_showCameraPane) _stopAutoPhoto();
+                    },
+                    tooltip: _showCameraPane ? '关闭摄像头' : '打开摄像头',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // 自动拍照按钮
+                if (widget.conversation.type == ConversationType.xiaozhi)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: IconButton(
+                      icon: Icon(
+                        _autoPhotoEnabled ? Icons.timer_off : Icons.timer,
+                        color: _autoPhotoEnabled ? Colors.red : Colors.white,
+                        size: 24,
+                      ),
+                      onPressed: _toggleAutoPhoto,
+                      tooltip: _autoPhotoEnabled ? '停止自动拍照' : '启动自动拍照',
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                // 手动拍照按钮
+                if (widget.conversation.type == ConversationType.xiaozhi)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.camera_alt, color: Colors.white, size: 24),
+                      onPressed: () => _captureFromCameraXAndSendToVision(isAuto: false),
+                      tooltip: '手动拍照',
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   Widget _buildRightPlaceholder() {
     return Center(
       child: Column(
