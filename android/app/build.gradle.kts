@@ -28,6 +28,9 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // 🔥 强制使用 CameraX 后端
+        manifestPlaceholders["useCameraX"] = "true"
     }
 
     buildTypes {
@@ -53,4 +56,16 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    val camerax_version = "1.3.4"
+    implementation("androidx.camera:camera-core:$camerax_version")
+    implementation("androidx.camera:camera-camera2:$camerax_version")
+    implementation("androidx.camera:camera-lifecycle:$camerax_version")
+    implementation("androidx.camera:camera-view:$camerax_version")
+    implementation("androidx.camera:camera-extensions:$camerax_version")
+
+    implementation("androidx.concurrent:concurrent-futures:1.2.0")
+    // implementation("com.google.guava:listenablefuture:1.0") // 只包含接口，不是整套 guava
 }

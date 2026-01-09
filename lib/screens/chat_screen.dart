@@ -25,6 +25,7 @@ import 'package:ai_assistant/widgets/message_bubble.dart';
 import 'package:ai_assistant/screens/voice_call_screen.dart';
 import 'package:ai_assistant/widgets/camera_pane.dart';
 import 'package:ai_assistant/models/experiment.dart';
+import 'package:ai_assistant/widgets/camerax_right_preview.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -673,7 +674,8 @@ from(bucket: "vitals_data")
       macAddress: xiaozhiConfig.macAddress,
       token: xiaozhiConfig.token,
     );
-
+     
+    
     // 添加消息监听器
     _xiaozhiService!.addListener(_handleXiaozhiMessage);
 
@@ -1158,7 +1160,6 @@ from(bucket: "vitals_data")
         children: [
           if (widget.conversation.type == ConversationType.xiaozhi)
             _buildXiaozhiInfo(),
-          // 新增：实验步骤容器
           if (_selectedExperiment != null) _buildExperimentStepsBar(),
           Expanded(child: _buildMessageList()),
           _buildInputArea(),
@@ -1166,15 +1167,16 @@ from(bucket: "vitals_data")
       );
     }
 
+        // 横屏：左侧消息，右侧摄像头
     return Row(
       children: [
+        // 左侧内容区（占 1/3）
         Expanded(
           flex: 1,
           child: Column(
             children: [
               if (widget.conversation.type == ConversationType.xiaozhi)
                 _buildXiaozhiInfo(),
-              // 新增：实验步骤容器
               if (_selectedExperiment != null) _buildExperimentStepsBar(),
               Expanded(child: _buildMessageList()),
               _buildInputArea(),
@@ -1182,29 +1184,33 @@ from(bucket: "vitals_data")
           ),
         ),
         Container(width: 1, color: Colors.grey.withOpacity(0.2)),
+        // 右侧摄像头区（占 2/3）
         Expanded(
           flex: 2,
-          child:
-              _showCameraPane
-                  ? Stack(
+          child: ClipRect(
+            child: _showCameraPane
+                ? Stack(
+                    fit: StackFit.expand,
                     children: [
-                      // 传递自动拍照参数和回调
-                      CameraPane(
-                        rotationDegrees: _cameraRotation,
-                        autoPhotoEnabled: _autoPhotoEnabled,
-                        autoPhotoInterval: const Duration(seconds: 10),
-                        onPhotoTaken: _handleCameraPhotoTaken,
+                      // 摄像头预览 - 使用 Positioned.fill 确保填满容器
+                      Positioned.fill(
+                        child: Container(
+                          color: Colors.black,
+                          child: CameraXRightPreview(
+                            lensFacing: 'external',
+                            implementationMode: 'PERFORMANCE',
+                            scaleType: 'FILL_CENTER',
+                          ),
+                        ),
                       ),
-
-                      // 新增：把体征条叠加到摄像头画面上方
+                      // 体征数据条
                       Positioned(
                         top: 12,
                         left: 12,
-                        right: 72, // 预留右侧按钮列宽，避免遮挡
+                        right: 72,
                         child: _buildVitalsBar(),
                       ),
-
-                      // 摄像头控制面板
+                      // 控制按钮组
                       Positioned(
                         top: 16,
                         right: 16,
@@ -1218,28 +1224,20 @@ from(bucket: "vitals_data")
                               ),
                               child: IconButton(
                                 icon: Icon(
-                                  _showCameraPane
-                                      ? Icons.videocam_off
-                                      : Icons.videocam,
+                                  _showCameraPane ? Icons.videocam_off : Icons.videocam,
                                   color: Colors.white,
                                   size: 24,
                                 ),
                                 onPressed: () {
-                                  setState(() {
-                                    _showCameraPane = !_showCameraPane;
-                                  });
-                                  if (!_showCameraPane) {
-                                    _stopAutoPhoto(); // 关闭摄像头时停止自动拍照
-                                  }
+                                  setState(() => _showCameraPane = !_showCameraPane);
+                                  if (!_showCameraPane) _stopAutoPhoto();
                                 },
                                 tooltip: _showCameraPane ? '关闭摄像头' : '打开摄像头',
                               ),
                             ),
                             const SizedBox(height: 8),
-                            // 自动拍照开关
-                            if (_showCameraPane &&
-                                widget.conversation.type ==
-                                    ConversationType.xiaozhi)
+                            // 自动拍照按钮
+                            if (widget.conversation.type == ConversationType.xiaozhi)
                               Container(
                                 decoration: BoxDecoration(
                                   color: Colors.black.withOpacity(0.6),
@@ -1247,18 +1245,26 @@ from(bucket: "vitals_data")
                                 ),
                                 child: IconButton(
                                   icon: Icon(
-                                    _autoPhotoEnabled
-                                        ? Icons.timer_off
-                                        : Icons.timer,
-                                    color:
-                                        _autoPhotoEnabled
-                                            ? Colors.red
-                                            : Colors.white,
+                                    _autoPhotoEnabled ? Icons.timer_off : Icons.timer,
+                                    color: _autoPhotoEnabled ? Colors.red : Colors.white,
                                     size: 24,
                                   ),
                                   onPressed: _toggleAutoPhoto,
-                                  tooltip:
-                                      _autoPhotoEnabled ? '停止自动拍照' : '启动自动拍照',
+                                  tooltip: _autoPhotoEnabled ? '停止自动拍照' : '启动自动拍照',
+                                ),
+                              ),
+                            const SizedBox(height: 8),
+                            // 手动拍照按钮
+                            if (widget.conversation.type == ConversationType.xiaozhi)
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.6),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: IconButton(
+                                  icon: const Icon(Icons.camera_alt, color: Colors.white, size: 24),
+                                  onPressed: () => _captureFromCameraXAndSendToVision(isAuto: false),
+                                  tooltip: '手动拍照',
                                 ),
                               ),
                           ],
@@ -1266,7 +1272,8 @@ from(bucket: "vitals_data")
                       ),
                     ],
                   )
-                  : _buildRightPlaceholder(),
+                : _buildRightPlaceholder(),
+          ),
         ),
       ],
     );
@@ -2542,6 +2549,9 @@ from(bucket: "vitals_data")
       );
       if (shot == null) return;
 
+      // 新增：从拍摄结果构造 File
+      final imageFile = File(shot.path);
+
       // 保存到会话目录
       final appDir = await getApplicationDocumentsDirectory();
       final dir = Directory(
@@ -2551,8 +2561,8 @@ from(bucket: "vitals_data")
 
       final prefix = isAutoCapture ? 'auto' : 'manual';
       final fileName = '${prefix}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final saved = File('${dir.path}/$fileName');
-      await File(shot.path).copy(saved.path);
+      final savedFile = File('${dir.path}/$fileName');
+      await imageFile.copy(savedFile.path);
 
       // 插入用户图片消息（识别中）
       final conversationProvider = Provider.of<ConversationProvider>(
@@ -2568,7 +2578,7 @@ from(bucket: "vitals_data")
         role: MessageRole.user,
         content: content,
         isImage: true,
-        imageLocalPath: saved.path,
+        imageLocalPath: savedFile.path,
       );
 
       // 读取小智配置以复用认证
@@ -2590,7 +2600,8 @@ from(bucket: "vitals_data")
 
       final prompt = isAutoCapture ? '请简要分析这张自动拍摄的图片内容' : '请识别这张图片的内容';
 
-      final responseText = await vs.analyzeImage(saved, question: prompt);
+      // 修复：传入 savedFile
+      final responseText = await vs.analyzeImage(savedFile, question: prompt);
 
       // Unicode解码处理
       String decodedResponse = _decodeUnicodeString(responseText);
@@ -2665,15 +2676,13 @@ from(bucket: "vitals_data")
       final prompt = _autoPhotoEnabled ? '请简要分析这张自动拍摄的图片内容' : '请识别这张摄像头拍摄的图片内容';
 
       final responseText = await vs.analyzeImage(savedFile, question: prompt);
-
-      // Unicode解码处理
-      String decodedResponse = _decodeUnicodeString(responseText);
+      final decoded = _decodeUnicodeString(responseText);
 
       // 插入助手消息
       await conversationProvider.addMessage(
         conversationId: widget.conversation.id,
         role: MessageRole.assistant,
-        content: decodedResponse,
+        content: decoded,
       );
 
       if (!_autoPhotoEnabled) {
@@ -2695,13 +2704,20 @@ from(bucket: "vitals_data")
 
     if (_autoPhotoEnabled) {
       _showCustomSnackbar('自动拍照已启动（每10秒一次）');
+      _autoPhotoTimer?.cancel();
+      _autoPhotoTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+        _photoCount++;
+        await _captureFromCameraXAndSendToVision(isAuto: true);
+      });
     } else {
       _showCustomSnackbar('自动拍照已停止');
+      _stopAutoPhoto();
     }
   }
 
-  // 停止自动拍照
   void _stopAutoPhoto() {
+    _autoPhotoTimer?.cancel();
+    _autoPhotoTimer = null;
     setState(() {
       _autoPhotoEnabled = false;
       _photoCount = 0;
@@ -3093,6 +3109,78 @@ from(bucket: "vitals_data")
     } catch (e) {
       print('原始响应测试异常: $e');
       _showCustomSnackbar('原始响应测试失败: $e');
+    }
+  }
+
+  // 通过 CameraX 平台视图拍照并走视觉识别（支持自动/手动）
+  Future<void> _captureFromCameraXAndSendToVision({bool isAuto = false}) async {
+    // 仅在 Android 上有效
+    if (!Platform.isAndroid) {
+      _showCustomSnackbar('当前平台不支持 CameraX');
+      return;
+    }
+
+    // 权限
+    final status = await Permission.camera.request();
+    if (status != PermissionStatus.granted) {
+      if (!isAuto) _showCustomSnackbar('未授予相机权限');
+      return;
+    }
+
+    try {
+      // 通过平台视图拍照
+      final path = await CameraXBridge.takePicture();
+      if (path == null || path.isEmpty) throw Exception('拍照失败');
+
+      // 保存到会话目录
+      final appDir = await getApplicationDocumentsDirectory();
+      final dir = Directory('${appDir.path}/conversations/${widget.conversation.id}/images');
+      await dir.create(recursive: true);
+
+      final prefix = isAuto ? 'auto' : 'manual';
+      final fileName = '${prefix}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final savedFile = File('${dir.path}/$fileName');
+      await File(path).copy(savedFile.path);
+
+      // 插入用户图片消息（识别中）
+      final conversationProvider = Provider.of<ConversationProvider>(context, listen: false);
+      final content = isAuto ? '[自动拍照 #$_photoCount - 识别中...]' : '[摄像头拍照 - 识别中...]';
+      await conversationProvider.addMessage(
+        conversationId: widget.conversation.id,
+        role: MessageRole.user,
+        content: content,
+        isImage: true,
+        imageLocalPath: savedFile.path,
+      );
+
+      // 调用视觉识别服务
+      final configProvider = Provider.of<ConfigProvider>(context, listen: false);
+      final xiaozhiConfig = configProvider.xiaozhiConfigs.firstWhere(
+        (c) => c.id == widget.conversation.configId,
+      );
+
+      final vs = VisionService(
+        visionUrl: 'http://183.251.85.225:8003/mcp/vision/explain',
+        authToken: _xiaozhiService!.getAuthToken(),
+        deviceId: xiaozhiConfig.macAddress,
+        clientId: 'android-client',
+      );
+
+      final prompt = isAuto ? '请简要分析这张自动拍摄的图片内容' : '请识别这张摄像头拍摄的图片内容';
+      final responseText = await vs.analyzeImage(savedFile, question: prompt);
+      final decoded = _decodeUnicodeString(responseText);
+
+      // 插入助手消息
+      await conversationProvider.addMessage(
+        conversationId: widget.conversation.id,
+        role: MessageRole.assistant,
+        content: decoded,
+      );
+
+      if (!isAuto) _scrollToBottom();
+    } catch (e) {
+      if (!isAuto) _showCustomSnackbar('图片识别失败: $e');
+      print('CameraX 拍照识别失败: $e');
     }
   }
 }
