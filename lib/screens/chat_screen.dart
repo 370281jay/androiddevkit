@@ -1150,78 +1150,75 @@ from(bucket: "vitals_data")
       children: [
         // 左侧：摄像头预览（含体征条悬浮）
         Expanded(
-          flex: 2,
-          child: _showCameraPane
-              ? Stack(
-                  children: [
-                    const NativeCameraXPreview(lensFacing: 'external'),
-                    Positioned(
-                      top: 12,
-                      left: 12,
-                      right: 72,
-                      child: _buildVitalsBar(),
+  flex: 2,
+  child: _showCameraPane
+      ? Stack(
+          children: [
+            // 先放预览，再放叠加层
+            RotatedBox(
+              quarterTurns: 3, // 逆时针90度
+              child: const NativeCameraXPreview(
+                lensFacing: 'external',
+                implementationMode: 'COMPATIBLE', // 强制TextureView
+                scaleType: 'FILL_CENTER',
+              ),
+            ),
+            Positioned(
+              top: 12,
+              left: 12,
+              right: 72,
+              child: _buildVitalsBar(),
+            ),
+            Positioned(
+              top: 16,
+              right: 16,
+              child: Row(
+                children: [
+                  // 自动拍照按钮
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    Positioned(
-                      top: 16,
-                      right: 16,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // 自动拍照按钮
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.6),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: IconButton(
-                              icon: Icon(
-                                _autoPhotoEnabled
-                                    ? Icons.camera_roll
-                                    : Icons.camera_alt_outlined,
-                                color: _autoPhotoEnabled
-                                    ? Colors.red
-                                    : Colors.white,
-                                size: 24,
-                              ),
-                              onPressed: _toggleAutoPhoto,
-                              tooltip: _autoPhotoEnabled
-                                  ? '停止自动拍照'
-                                  : '启动自动拍照',
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          // 关闭摄像头按钮
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.6),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: IconButton(
-                              icon: Icon(
-                                _showCameraPane
-                                    ? Icons.videocam_off
-                                    : Icons.videocam,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  _showCameraPane = !_showCameraPane;
-                                });
-                                if (!_showCameraPane) _stopAutoPhoto();
-                              },
-                              tooltip: _showCameraPane
-                                  ? '关闭摄像头'
-                                  : '打开摄像头',
-                            ),
-                          ),
-                        ],
+                    child: IconButton(
+                      icon: Icon(
+                        _autoPhotoEnabled
+                            ? Icons.camera_roll
+                            : Icons.camera_alt_outlined,
+                        color: _autoPhotoEnabled ? Colors.red : Colors.white,
+                        size: 24,
                       ),
+                      onPressed: _toggleAutoPhoto,
+                      tooltip: _autoPhotoEnabled ? '停止自动拍照' : '启动自动拍照',
                     ),
-                    ],
-                )
-              : _buildRightPlaceholder(),
-        ),
+                  ),
+                  const SizedBox(width: 8),
+                  // 关闭摄像头
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: IconButton(
+                      icon: Icon(
+                        _showCameraPane ? Icons.videocam_off : Icons.videocam,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                      onPressed: () {
+                        setState(() => _showCameraPane = !_showCameraPane);
+                        if (!_showCameraPane) _stopAutoPhoto();
+                      },
+                      tooltip: _showCameraPane ? '关闭摄像头' : '打开摄像头',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        )
+      : _buildRightPlaceholder(),
+),
         Container(width: 1, color: Colors.grey.withOpacity(0.2)),
         // 右侧：聊天区域
         Expanded(

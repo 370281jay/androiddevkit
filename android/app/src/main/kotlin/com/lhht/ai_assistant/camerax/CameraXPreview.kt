@@ -48,19 +48,24 @@ class CameraXPreviewImpl(
 
     init {
         val lensFacing = params["lensFacing"] as? String ?: "back"
-        val implMode = params["implementationMode"] as? String ?: "PERFORMANCE"
-        val scaleTypeStr = params["scaleType"] as? String ?: "FILL_CENTER"
+        val implMode = (params["implementationMode"] as? String) ?: "COMPATIBLE"
+        val scaleTypeStr = (params["scaleType"] as? String) ?: "FILL_CENTER"
+        val rotationDeg = (params["rotationDegrees"] as? Number)?.toFloat() ?: -90f
 
-        previewView.implementationMode = when (implMode) {
+        // 使用 TextureView，避免遮挡并支持旋转
+        previewView.implementationMode = when (implMode.uppercase()) {
             "COMPATIBLE" -> PreviewView.ImplementationMode.COMPATIBLE
             else -> PreviewView.ImplementationMode.PERFORMANCE
         }
-        previewView.scaleType = when (scaleTypeStr) {
+        previewView.scaleType = when (scaleTypeStr.uppercase()) {
             "FIT_CENTER" -> PreviewView.ScaleType.FIT_CENTER
             "FIT_START" -> PreviewView.ScaleType.FIT_START
             "FIT_END" -> PreviewView.ScaleType.FIT_END
             else -> PreviewView.ScaleType.FILL_CENTER
         }
+
+        // 在 TextureView 模式下旋转预览
+        try { previewView.rotation = rotationDeg } catch (_: Throwable) {}
 
         controller.cameraSelector = when (lensFacing) {
             "front" -> CameraSelector.DEFAULT_FRONT_CAMERA
