@@ -7,15 +7,15 @@ import 'package:flutter/gestures.dart';
 
 /// Android 原生 CameraX 预览封装
 class NativeCameraXPreview extends StatefulWidget {
-  final String lensFacing;           // back | front | external
-  final double rotationDegrees;      // -90 逆时针
-  final String implementationMode;   // PERFORMANCE | COMPATIBLE
-  final String scaleType;            // FILL_CENTER | FIT_CENTER | ...
+  final String lensFacing;
+  final double rotationDegrees;      // 仅占位，不在原生应用
+  final String implementationMode;
+  final String scaleType;
 
   const NativeCameraXPreview({
     super.key,
     this.lensFacing = 'external',
-    this.rotationDegrees = -90,
+    this.rotationDegrees = 0,        // 设置为0，避免原生误旋转
     this.implementationMode = 'COMPATIBLE',
     this.scaleType = 'FILL_CENTER',
   });
@@ -49,7 +49,7 @@ class _NativeCameraXPreviewState extends State<NativeCameraXPreview> {
           layoutDirection: TextDirection.ltr,
           creationParams: {
             'lensFacing': widget.lensFacing,
-            'rotationDegrees': widget.rotationDegrees,
+            'rotationDegrees': widget.rotationDegrees, // 现在为0
             'implementationMode': widget.implementationMode,
             'scaleType': widget.scaleType,
           },

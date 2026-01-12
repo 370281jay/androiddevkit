@@ -50,7 +50,7 @@ class CameraXPreviewImpl(
         val lensFacing = params["lensFacing"] as? String ?: "back"
         val implMode = (params["implementationMode"] as? String) ?: "COMPATIBLE"
         val scaleTypeStr = (params["scaleType"] as? String) ?: "FILL_CENTER"
-        val rotationDeg = (params["rotationDegrees"] as? Number)?.toFloat() ?: -90f
+        val rotationDeg = (params["rotationDegrees"] as? Number)?.toFloat() ?: 0f
 
         // 使用 TextureView，避免遮挡并支持旋转
         previewView.implementationMode = when (implMode.uppercase()) {
@@ -64,8 +64,8 @@ class CameraXPreviewImpl(
             else -> PreviewView.ScaleType.FILL_CENTER
         }
 
-        // 在 TextureView 模式下旋转预览
-        try { previewView.rotation = rotationDeg } catch (_: Throwable) {}
+        // 移除原生旋转，避免与 Flutter 的 RotatedBox 叠加成 180°
+//         try { previewView.rotation = rotationDeg } catch (_: Throwable) {}
 
         controller.cameraSelector = when (lensFacing) {
             "front" -> CameraSelector.DEFAULT_FRONT_CAMERA

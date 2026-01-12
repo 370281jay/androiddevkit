@@ -27,6 +27,7 @@ import 'package:ai_assistant/widgets/message_bubble.dart';
 import 'package:ai_assistant/screens/voice_call_screen.dart';
 import 'package:ai_assistant/widgets/native_camerax_preview.dart';
 import 'package:ai_assistant/models/experiment.dart';
+import 'package:ai_assistant/widgets/camerax_right_preview.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -647,7 +648,8 @@ from(bucket: "vitals_data")
       macAddress: xiaozhiConfig.macAddress,
       token: xiaozhiConfig.token,
     );
-
+     
+    
     // 添加消息监听器
     _xiaozhiService!.addListener(_handleXiaozhiMessage);
 
@@ -1130,6 +1132,8 @@ from(bucket: "vitals_data")
     );
   }
 
+// 找到 _buildResponsiveBody 方法并替换为：
+
   Widget _buildResponsiveBody() {
     final isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
@@ -1138,7 +1142,6 @@ from(bucket: "vitals_data")
         children: [
           if (widget.conversation.type == ConversationType.xiaozhi)
             _buildXiaozhiInfo(),
-          // 新增：实验步骤容器
           if (_selectedExperiment != null) _buildExperimentStepsBar(),
           Expanded(child: _buildMessageList()),
           _buildInputArea(),
@@ -1236,7 +1239,6 @@ from(bucket: "vitals_data")
       ],
     );
   }
-
   Widget _buildRightPlaceholder() {
     return Center(
       child: Column(
@@ -2507,6 +2509,9 @@ from(bucket: "vitals_data")
       );
       if (shot == null) return;
 
+      // 新增：从拍摄结果构造 File
+      final imageFile = File(shot.path);
+
       // 保存到会话目录
       final appDir = await getApplicationDocumentsDirectory();
       final dir = Directory(
@@ -2516,8 +2521,8 @@ from(bucket: "vitals_data")
 
       final prefix = isAutoCapture ? 'auto' : 'manual';
       final fileName = '${prefix}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final saved = File('${dir.path}/$fileName');
-      await File(shot.path).copy(saved.path);
+      final savedFile = File('${dir.path}/$fileName');
+      await imageFile.copy(savedFile.path);
 
       // 插入用户图片消息（识别中）
       final conversationProvider = Provider.of<ConversationProvider>(
@@ -2533,7 +2538,7 @@ from(bucket: "vitals_data")
         role: MessageRole.user,
         content: content,
         isImage: true,
-        imageLocalPath: saved.path,
+        imageLocalPath: savedFile.path,
       );
 
       // 读取小智配置以复用认证
@@ -2555,7 +2560,8 @@ from(bucket: "vitals_data")
 
       final prompt = isAutoCapture ? '请简要分析这张自动拍摄的图片内容' : '请识别这张图片的内容';
 
-      final responseText = await vs.analyzeImage(saved, question: prompt);
+      // 修复：传入 savedFile
+      final responseText = await vs.analyzeImage(savedFile, question: prompt);
 
       // Unicode解码处理
       String decodedResponse = _decodeUnicodeString(responseText);
@@ -2630,15 +2636,13 @@ from(bucket: "vitals_data")
       final prompt = _autoPhotoEnabled ? '请简要分析这张自动拍摄的图片内容' : '请识别这张摄像头拍摄的图片内容';
 
       final responseText = await vs.analyzeImage(savedFile, question: prompt);
-
-      // Unicode解码处理
-      String decodedResponse = _decodeUnicodeString(responseText);
+      final decoded = _decodeUnicodeString(responseText);
 
       // 插入助手消息
       await conversationProvider.addMessage(
         conversationId: widget.conversation.id,
         role: MessageRole.assistant,
-        content: decodedResponse,
+        content: decoded,
       );
 
       if (!_autoPhotoEnabled) {
@@ -2660,13 +2664,20 @@ from(bucket: "vitals_data")
 
     if (_autoPhotoEnabled) {
       _showCustomSnackbar('自动拍照已启动（每10秒一次）');
+      _autoPhotoTimer?.cancel();
+      _autoPhotoTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+        _photoCount++;
+        await _captureFromCameraXAndSendToVision(isAuto: true);
+      });
     } else {
       _showCustomSnackbar('自动拍照已停止');
+      _stopAutoPhoto();
     }
   }
 
-  // 停止自动拍照
   void _stopAutoPhoto() {
+    _autoPhotoTimer?.cancel();
+    _autoPhotoTimer = null;
     setState(() {
       _autoPhotoEnabled = false;
       _photoCount = 0;
@@ -3058,6 +3069,78 @@ from(bucket: "vitals_data")
     } catch (e) {
       debugPrint('原始响应测试异常: $e');
       _showCustomSnackbar('原始响应测试失败: $e');
+    }
+  }
+
+  // 通过 CameraX 平台视图拍照并走视觉识别（支持自动/手动）
+  Future<void> _captureFromCameraXAndSendToVision({bool isAuto = false}) async {
+    // 仅在 Android 上有效
+    if (!Platform.isAndroid) {
+      _showCustomSnackbar('当前平台不支持 CameraX');
+      return;
+    }
+
+    // 权限
+    final status = await Permission.camera.request();
+    if (status != PermissionStatus.granted) {
+      if (!isAuto) _showCustomSnackbar('未授予相机权限');
+      return;
+    }
+
+    try {
+      // 通过平台视图拍照
+      final path = await CameraXBridge.takePicture();
+      if (path == null || path.isEmpty) throw Exception('拍照失败');
+
+      // 保存到会话目录
+      final appDir = await getApplicationDocumentsDirectory();
+      final dir = Directory('${appDir.path}/conversations/${widget.conversation.id}/images');
+      await dir.create(recursive: true);
+
+      final prefix = isAuto ? 'auto' : 'manual';
+      final fileName = '${prefix}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final savedFile = File('${dir.path}/$fileName');
+      await File(path).copy(savedFile.path);
+
+      // 插入用户图片消息（识别中）
+      final conversationProvider = Provider.of<ConversationProvider>(context, listen: false);
+      final content = isAuto ? '[自动拍照 #$_photoCount - 识别中...]' : '[摄像头拍照 - 识别中...]';
+      await conversationProvider.addMessage(
+        conversationId: widget.conversation.id,
+        role: MessageRole.user,
+        content: content,
+        isImage: true,
+        imageLocalPath: savedFile.path,
+      );
+
+      // 调用视觉识别服务
+      final configProvider = Provider.of<ConfigProvider>(context, listen: false);
+      final xiaozhiConfig = configProvider.xiaozhiConfigs.firstWhere(
+        (c) => c.id == widget.conversation.configId,
+      );
+
+      final vs = VisionService(
+        visionUrl: 'http://183.251.85.225:8003/mcp/vision/explain',
+        authToken: _xiaozhiService!.getAuthToken(),
+        deviceId: xiaozhiConfig.macAddress,
+        clientId: 'android-client',
+      );
+
+      final prompt = isAuto ? '请简要分析这张自动拍摄的图片内容' : '请识别这张摄像头拍摄的图片内容';
+      final responseText = await vs.analyzeImage(savedFile, question: prompt);
+      final decoded = _decodeUnicodeString(responseText);
+
+      // 插入助手消息
+      await conversationProvider.addMessage(
+        conversationId: widget.conversation.id,
+        role: MessageRole.assistant,
+        content: decoded,
+      );
+
+      if (!isAuto) _scrollToBottom();
+    } catch (e) {
+      if (!isAuto) _showCustomSnackbar('图片识别失败: $e');
+      print('CameraX 拍照识别失败: $e');
     }
   }
 }
