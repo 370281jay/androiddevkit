@@ -20,10 +20,12 @@ import 'package:ai_assistant/models/xiaozhi_config.dart';
 import 'package:ai_assistant/models/dify_config.dart';
 import 'package:ai_assistant/services/dify_service.dart';
 import 'package:ai_assistant/services/xiaozhi_service.dart';
+// ignore_for_file: unused_field, unused_element
+
 import 'package:ai_assistant/providers/config_provider.dart';
 import 'package:ai_assistant/widgets/message_bubble.dart';
 import 'package:ai_assistant/screens/voice_call_screen.dart';
-import 'package:ai_assistant/widgets/camera_pane.dart';
+import 'package:ai_assistant/widgets/native_camerax_preview.dart';
 import 'package:ai_assistant/models/experiment.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -84,8 +86,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint('🔵 [ChatScreen.initState] 开始初始化');
 
-    // 设置状态栏为透明并使图标为黑色
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -97,132 +99,101 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
 
-    // 在帧绘制后再次设置系统UI样式，避免被覆盖
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      SystemChrome.setSystemUIOverlayStyle(
-        const SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          statusBarIconBrightness: Brightness.dark,
-          statusBarBrightness: Brightness.light,
-          systemNavigationBarColor: Colors.transparent,
-          systemNavigationBarIconBrightness: Brightness.dark,
-          systemNavigationBarDividerColor: Colors.transparent,
-        ),
-      );
-
-      Provider.of<ConversationProvider>(
-        context,
-        listen: false,
-      ).markConversationAsRead(widget.conversation.id);
-
-      // 如果是小智对话，初始化服务
-      if (widget.conversation.type == ConversationType.xiaozhi) {
-        _initXiaozhiService();
-        // 添加定时器定期检查连接状态
-        _connectionCheckTimer = Timer.periodic(const Duration(seconds: 2), (
-          timer,
-        ) {
-          if (mounted && _xiaozhiService != null) {
-            final wasConnected = _xiaozhiService!.isConnected;
-
-            // 刷新UI
-            setState(() {});
-
-            // 如果状态从连接变为断开，尝试自动重连
-            if (wasConnected &&
-                !_xiaozhiService!.isConnected &&
-                _autoReconnectTimer == null) {
-              print('检测到连接断开，准备自动重连');
-              _scheduleReconnect();
-            }
-          }
-        });
-
-        // 默认启用语音输入模式 (针对小智对话)
-        setState(() {
-          _isVoiceInputMode = true;
-        });
-      } else if (widget.conversation.type == ConversationType.dify) {
-        // 初始化 DifyService
-        _initDifyService();
-      }
-
-      // 进入聊天后，若为横屏则自动显示右侧摄像头
-      final isLandscape =
-          MediaQuery.of(context).orientation == Orientation.landscape;
-      if (isLandscape && mounted) {
-        setState(() => _showCameraPane = true);
-      }
-    });
-
-    // 初始化 InfluxDB 服务
     _influxDBService = InfluxDBService();
+    _stepsPageController = PageController(viewportFraction: 0.9);
 
-    // 🔥 重要：先初始化所有核心服务，再处理UI
+    debugPrint('🔵 [ChatScreen.initState] 准备 addPostFrameCallback');
+
+    // ✅ 仅一个 addPostFrameCallback，统一处理所有初始化
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // 标记对话为已读
-      Provider.of<ConversationProvider>(
-        context,
-        listen: false,
-      ).markConversationAsRead(widget.conversation.id);
+      debugPrint('🟢 [PostFrameCallback] 执行开始 - 会话类型: ${widget.conversation.type}');
 
-      // 1. 首先初始化核心服务（小智/Dify）
+      // 1️⃣ 标记已读
+      debugPrint('🔵 [PostFrameCallback] 标记会话已读');
+      Provider.of<ConversationProvider>(context, listen: false)
+          .markConversationAsRead(widget.conversation.id);
+
+      // 2️⃣ 根据对话类型初始化服务
       if (widget.conversation.type == ConversationType.xiaozhi) {
-        // 🚀 优先初始化小智服务和WebSocket连接
-        await _initXiaozhiService();
+        debugPrint('🔵 [PostFrameCallback] 检测到 Xiaozhi 会话，开始初始化 WebSocket');
+        
+        try {
+          // 先连小智
+          debugPrint('🔵 [PostFrameCallback] 调用 _initXiaozhiService()');
+          await _initXiaozhiService();
+          debugPrint('🟢 [PostFrameCallback] _initXiaozhiService() 完成，连接状态: ${_xiaozhiService?.isConnected}');
+        } catch (e) {
+          debugPrint('🔴 [PostFrameCallback] _initXiaozhiService() 失败: $e');
+        }
 
-        // 添加连接状态监控
-        _connectionCheckTimer = Timer.periodic(const Duration(seconds: 2), (
-          timer,
-        ) {
-          if (mounted && _xiaozhiService != null) {
+        // 监控连接状态
+        debugPrint('🔵 [PostFrameCallback] 启动连接监控定时器');
+        _connectionCheckTimer = Timer.periodic(
+          const Duration(seconds: 2),
+          (_) {
+            if (!mounted || _xiaozhiService == null) return;
             final wasConnected = _xiaozhiService!.isConnected;
+            debugPrint('🟡 [ConnectionCheck] 连接状态: $wasConnected');
             setState(() {});
-
             if (wasConnected &&
                 !_xiaozhiService!.isConnected &&
                 _autoReconnectTimer == null) {
-              print('检测到连接断开，准备自动重连');
+              debugPrint('⚠️ [ConnectionCheck] 连接断开，触发重连');
               _scheduleReconnect();
             }
-          }
-        });
+          },
+        );
 
-        // 默认启用语音输入模式
-        setState(() {
-          _isVoiceInputMode = true;
-        });
+        // 默认启用语音输入
+        debugPrint('🔵 [PostFrameCallback] 启用语音输入模式');
+        setState(() => _isVoiceInputMode = true);
 
-        // ✅ WebSocket连接成功后，再显示实验选择
+        // ✅ WebSocket 连接成功后，显示实验选择
+        debugPrint('🔵 [PostFrameCallback] 调用 _scheduleExperimentSelection()');
         _scheduleExperimentSelection();
       } else if (widget.conversation.type == ConversationType.dify) {
+        debugPrint('🔵 [PostFrameCallback] 检测到 Dify 会话');
         _initDifyService();
       }
 
-      // 2. 然后启动其他服务
+      // 3️⃣ 启动其他后台服务
+      debugPrint('🔵 [PostFrameCallback] 启动 InfluxDB 烟雾测试');
       _influxSmokeTest();
+      
+      debugPrint('🔵 [PostFrameCallback] 启动体征数据轮询');
       _startVitalsPolling();
 
-      // 3. 处理横屏摄像头
-      final isLandscape =
-          MediaQuery.of(context).orientation == Orientation.landscape;
-      if (isLandscape && mounted) {
+      // 4️⃣ 横屏自动显示摄像头
+      if (MediaQuery.of(context).orientation == Orientation.landscape &&
+          mounted) {
+        debugPrint('🔵 [PostFrameCallback] 横屏检测到，启用摄像头');
         setState(() => _showCameraPane = true);
       }
+
+      debugPrint('🟢 [PostFrameCallback] 执行完成');
     });
 
-    // 初始化步骤页面控制器
-    _stepsPageController = PageController(viewportFraction: 0.9);
+    debugPrint('🔵 [ChatScreen.initState] 初始化完成');
   }
 
   // 🆕 延迟显示实验选择对话框
   void _scheduleExperimentSelection() {
+    debugPrint('🟡 [_scheduleExperimentSelection] 安排延迟1秒后显示实验选择');
     // 等待WebSocket连接稳定后再显示
     Timer(const Duration(seconds: 1), () {
+      debugPrint('🟡 [_scheduleExperimentSelection] 1秒延迟触发');
+      debugPrint('  - mounted: $mounted');
+      debugPrint('  - _selectedExperiment: $_selectedExperiment');
+      debugPrint('  - _xiaozhiService: $_xiaozhiService');
+      debugPrint('  - isConnected: ${_xiaozhiService?.isConnected}');
+
       if (mounted &&
           _selectedExperiment == null &&
           _xiaozhiService?.isConnected == true) {
+        debugPrint('🟢 [_scheduleExperimentSelection] 条件满足，显示对话框');
         _showExperimentSelectionDialog();
+      } else {
+        debugPrint('🔴 [_scheduleExperimentSelection] 条件不满足，取消显示');
       }
     });
   }
@@ -252,14 +223,14 @@ from(bucket: "vitals_data")
 
     // 创建新的重连定时器，5秒后尝试重连
     _autoReconnectTimer = Timer(const Duration(seconds: 5), () async {
-      print('正在尝试自动重连...');
+      debugPrint('正在尝试自动重连...');
       if (_xiaozhiService != null && !_xiaozhiService!.isConnected && mounted) {
         try {
           await _xiaozhiService!.disconnect();
           await _xiaozhiService!.connect();
 
           setState(() {});
-          print('自动重连 ${_xiaozhiService!.isConnected ? "成功" : "失败"}');
+          debugPrint('自动重连 ${_xiaozhiService!.isConnected ? "成功" : "失败"}');
 
           // 如果重连失败，则继续尝试重连
           if (!_xiaozhiService!.isConnected) {
@@ -268,7 +239,7 @@ from(bucket: "vitals_data")
             _autoReconnectTimer = null;
           }
         } catch (e) {
-          print('自动重连出错: $e');
+          debugPrint('自动重连出错: $e');
           _scheduleReconnect(); // 出错后继续尝试
         }
       } else {
@@ -663,10 +634,13 @@ from(bucket: "vitals_data")
 
   // 初始化小智服务
   Future<void> _initXiaozhiService() async {
+    debugPrint('🟡 [_initXiaozhiService] 开始初始化');
     final configProvider = Provider.of<ConfigProvider>(context, listen: false);
     final xiaozhiConfig = configProvider.xiaozhiConfigs.firstWhere(
       (config) => config.id == widget.conversation.configId,
     );
+
+    debugPrint('🟡 [_initXiaozhiService] 配置 - URL: ${xiaozhiConfig.websocketUrl}, MAC: ${xiaozhiConfig.macAddress}');
 
     _xiaozhiService = XiaozhiService(
       websocketUrl: xiaozhiConfig.websocketUrl,
@@ -678,14 +652,20 @@ from(bucket: "vitals_data")
     _xiaozhiService!.addListener(_handleXiaozhiMessage);
 
     // 连接服务
-    await _xiaozhiService!.connect();
+    debugPrint('🟡 [_initXiaozhiService] 调用 connect()');
+    try {
+      await _xiaozhiService!.connect();
+      debugPrint('🟢 [_initXiaozhiService] 连接成功，状态: ${_xiaozhiService!.isConnected}');
+    } catch (e) {
+      debugPrint('🔴 [_initXiaozhiService] 连接失败: $e');
+      rethrow;
+    }
 
     // 连接后刷新UI状态
     if (mounted) {
       setState(() {});
     }
   }
-
   // 处理小智消息
   void _handleXiaozhiMessage(XiaozhiServiceEvent event) {
     if (!mounted) return;
@@ -698,7 +678,7 @@ from(bucket: "vitals_data")
     if (event.type == XiaozhiServiceEventType.textMessage) {
       // 直接使用文本内容
       String content = event.data as String;
-      print('收到消息内容: $content');
+      debugPrint('收到消息内容: $content');
 
       // 忽略空消息
       if (content.isNotEmpty) {
@@ -711,7 +691,7 @@ from(bucket: "vitals_data")
     } else if (event.type == XiaozhiServiceEventType.userMessage) {
       // 处理用户的语音识别文本
       String content = event.data as String;
-      print('收到用户语音识别内容: $content');
+      debugPrint('收到用户语音识别内容: $content');
 
       // 只有在语音输入模式下才添加用户消息
       if (content.isNotEmpty && _isVoiceInputMode) {
@@ -1168,105 +1148,93 @@ from(bucket: "vitals_data")
 
     return Row(
       children: [
+        // 左侧：摄像头预览（含体征条悬浮）
+        Expanded(
+          flex: 2,
+          child: _showCameraPane
+              ? Stack(
+                  children: [
+                    const NativeCameraXPreview(lensFacing: 'external'),
+                    Positioned(
+                      top: 12,
+                      left: 12,
+                      right: 72,
+                      child: _buildVitalsBar(),
+                    ),
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // 自动拍照按钮
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.6),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: IconButton(
+                              icon: Icon(
+                                _autoPhotoEnabled
+                                    ? Icons.camera_roll
+                                    : Icons.camera_alt_outlined,
+                                color: _autoPhotoEnabled
+                                    ? Colors.red
+                                    : Colors.white,
+                                size: 24,
+                              ),
+                              onPressed: _toggleAutoPhoto,
+                              tooltip: _autoPhotoEnabled
+                                  ? '停止自动拍照'
+                                  : '启动自动拍照',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // 关闭摄像头按钮
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.6),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: IconButton(
+                              icon: Icon(
+                                _showCameraPane
+                                    ? Icons.videocam_off
+                                    : Icons.videocam,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _showCameraPane = !_showCameraPane;
+                                });
+                                if (!_showCameraPane) _stopAutoPhoto();
+                              },
+                              tooltip: _showCameraPane
+                                  ? '关闭摄像头'
+                                  : '打开摄像头',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ],
+                )
+              : _buildRightPlaceholder(),
+        ),
+        Container(width: 1, color: Colors.grey.withOpacity(0.2)),
+        // 右侧：聊天区域
         Expanded(
           flex: 1,
           child: Column(
             children: [
               if (widget.conversation.type == ConversationType.xiaozhi)
                 _buildXiaozhiInfo(),
-              // 新增：实验步骤容器
               if (_selectedExperiment != null) _buildExperimentStepsBar(),
               Expanded(child: _buildMessageList()),
               _buildInputArea(),
             ],
           ),
-        ),
-        Container(width: 1, color: Colors.grey.withOpacity(0.2)),
-        Expanded(
-          flex: 2,
-          child:
-              _showCameraPane
-                  ? Stack(
-                    children: [
-                      // 传递自动拍照参数和回调
-                      CameraPane(
-                        rotationDegrees: _cameraRotation,
-                        autoPhotoEnabled: _autoPhotoEnabled,
-                        autoPhotoInterval: const Duration(seconds: 10),
-                        onPhotoTaken: _handleCameraPhotoTaken,
-                      ),
-
-                      // 新增：把体征条叠加到摄像头画面上方
-                      Positioned(
-                        top: 12,
-                        left: 12,
-                        right: 72, // 预留右侧按钮列宽，避免遮挡
-                        child: _buildVitalsBar(),
-                      ),
-
-                      // 摄像头控制面板
-                      Positioned(
-                        top: 16,
-                        right: 16,
-                        child: Column(
-                          children: [
-                            // 开关摄像头按钮
-                            Container(
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.6),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: IconButton(
-                                icon: Icon(
-                                  _showCameraPane
-                                      ? Icons.videocam_off
-                                      : Icons.videocam,
-                                  color: Colors.white,
-                                  size: 24,
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    _showCameraPane = !_showCameraPane;
-                                  });
-                                  if (!_showCameraPane) {
-                                    _stopAutoPhoto(); // 关闭摄像头时停止自动拍照
-                                  }
-                                },
-                                tooltip: _showCameraPane ? '关闭摄像头' : '打开摄像头',
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            // 自动拍照开关
-                            if (_showCameraPane &&
-                                widget.conversation.type ==
-                                    ConversationType.xiaozhi)
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.6),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: IconButton(
-                                  icon: Icon(
-                                    _autoPhotoEnabled
-                                        ? Icons.timer_off
-                                        : Icons.timer,
-                                    color:
-                                        _autoPhotoEnabled
-                                            ? Colors.red
-                                            : Colors.white,
-                                    size: 24,
-                                  ),
-                                  onPressed: _toggleAutoPhoto,
-                                  tooltip:
-                                      _autoPhotoEnabled ? '停止自动拍照' : '启动自动拍照',
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  )
-                  : _buildRightPlaceholder(),
         ),
       ],
     );
@@ -1905,7 +1873,7 @@ from(bucket: "vitals_data")
       // 开始录音
       await _xiaozhiService!.startListening();
     } catch (e) {
-      print('开始录音失败: $e');
+      debugPrint('开始录音失败: $e');
       _showCustomSnackbar('无法开始录音: ${e.toString()}');
       setState(() {
         _isRecording = false;
@@ -1932,7 +1900,7 @@ from(bucket: "vitals_data")
 
       _scrollToBottom();
     } catch (e) {
-      print('停止录音失败: $e');
+      debugPrint('停止录音失败: $e');
       _showCustomSnackbar('语音发送失败: ${e.toString()}');
 
       // 出错时关闭语音输入模式
@@ -1962,7 +1930,7 @@ from(bucket: "vitals_data")
       // 使用自定义的拟物化提示，显示在顶部且带有圆角
       _showCustomSnackbar('已取消发送');
     } catch (e) {
-      print('取消录音失败: $e');
+      debugPrint('取消录音失败: $e');
     }
   }
 
@@ -2083,7 +2051,7 @@ from(bucket: "vitals_data")
           await _initXiaozhiService();
         } else if (!_xiaozhiService!.isConnected) {
           // 如果未连接，尝试重新连接
-          print('聊天屏幕: 服务未连接，尝试重新连接');
+          debugPrint('聊天屏幕: 服务未连接，尝试重新连接');
           await _xiaozhiService!.connect();
 
           // 如果重连失败，提示用户
@@ -2099,7 +2067,7 @@ from(bucket: "vitals_data")
         await _xiaozhiService!.sendTextMessage(message);
       }
     } catch (e) {
-      print('聊天屏幕: 发送消息错误: $e');
+      debugPrint('聊天屏幕: 发送消息错误: $e');
 
       if (!mounted) return;
 
@@ -2448,7 +2416,7 @@ from(bucket: "vitals_data")
       final File imageFile = File(pickedFile.path);
       await imageFile.copy(localPath);
 
-      print('图片已保存到永久存储: $localPath');
+      debugPrint('图片已保存到永久存储: $localPath');
 
       final sessionId = widget.conversation.id;
 
@@ -2503,7 +2471,7 @@ from(bucket: "vitals_data")
 
       _showCustomSnackbar('图片上传成功');
     } catch (e) {
-      print('图片上传失败: $e');
+      debugPrint('图片上传失败: $e');
 
       final conversationProvider = Provider.of<ConversationProvider>(
         context,
@@ -2609,7 +2577,7 @@ from(bucket: "vitals_data")
       if (!isAutoCapture) {
         _showCustomSnackbar('图片识别失败: $e');
       }
-      print('拍照识别失败: $e');
+      debugPrint('拍照识别失败: $e');
     }
   }
 
@@ -2680,7 +2648,7 @@ from(bucket: "vitals_data")
         _scrollToBottom();
       }
     } catch (e) {
-      print('摄像头拍照识别失败: $e');
+      debugPrint('摄像头拍照识别失败: $e');
       if (!_autoPhotoEnabled) {
         _showCustomSnackbar('图片识别失败: $e');
       }
@@ -2744,7 +2712,7 @@ from(bucket: "vitals_data")
         // 处理查询结果
         for (final result in results) {
           if (result is Map<String, dynamic>) {
-            print('时间: ${result['_time']}, 温度: ${result['_value']}');
+            debugPrint('时间: ${result['_time']}, 温度: ${result['_value']}');
           }
         }
       } else {
@@ -2766,11 +2734,11 @@ from(bucket: "vitals_data")
       if (response.hasResults) {
         final results = response.results as List<Map<String, String>>;
         for (final result in results) {
-          print('湿度平均值: ${result['_value']}');
+          debugPrint('湿度平均值: ${result['_value']}');
         }
       }
     } catch (e) {
-      print('湿度查询失败: $e');
+      debugPrint('湿度查询失败: $e');
     }
   }
 
@@ -2787,67 +2755,67 @@ from(bucket: "vitals_data")
     final response = await _influxDBService.query(query: customQuery);
 
     if (response.hasResults) {
-      print('最新心率数据: ${response.results}');
+      debugPrint('最新心率数据: ${response.results}');
     }
   }
 
   // 测试 InfluxDB 数据获取
   Future<void> _testInfluxDBData() async {
     try {
-      print('开始测试 InfluxDB 数据获取...');
+      debugPrint('开始测试 InfluxDB 数据获取...');
 
       // 测试1: 查询温度数据 (时间移动平均)
-      print('\n=== 测试1: 温度数据 (tma2m) ===');
+      debugPrint('\n=== 测试1: 温度数据 (tma2m) ===');
       final tempResponse = await _influxDBService.query(
         field: 'temperature',
         mode: 'tma2m',
         deviceId: '84F7035346E0',
       );
 
-      print('Temperature Response:');
-      print('- hasError: ${tempResponse.hasError}');
-      print('- hasResults: ${tempResponse.hasResults}');
+      debugPrint('Temperature Response:');
+      debugPrint('- hasError: ${tempResponse.hasError}');
+      debugPrint('- hasResults: ${tempResponse.hasResults}');
       if (tempResponse.hasError) {
-        print('- error: ${tempResponse.error}');
+        debugPrint('- error: ${tempResponse.error}');
       }
       if (tempResponse.hasResults) {
-        print('- results count: ${tempResponse.results?.length}');
-        print('- results type: ${tempResponse.results.runtimeType}');
-        print('- results full data: ${tempResponse.results}');
+        debugPrint('- results count: ${tempResponse.results?.length}');
+        debugPrint('- results type: ${tempResponse.results.runtimeType}');
+        debugPrint('- results full data: ${tempResponse.results}');
 
         // 详细打印前几条数据
         final results = tempResponse.results as List;
         for (int i = 0; i < (results.length > 3 ? 3 : results.length); i++) {
-          print('  [$i]: ${results[i]} (type: ${results[i].runtimeType})');
+          debugPrint('  [$i]: ${results[i]} (type: ${results[i].runtimeType})');
           if (results[i] is Map) {
             final map = results[i] as Map;
             map.forEach((key, value) {
-              print('    $key: $value (${value.runtimeType})');
+              debugPrint('    $key: $value (${value.runtimeType})');
             });
           }
         }
       }
 
       // 测试2: 查询湿度数据 (平均值)
-      print('\n=== 测试2: 湿度数据 (mean5m) ===');
+      debugPrint('\n=== 测试2: 湿度数据 (mean5m) ===');
       final humidityResponse = await _influxDBService.query(
         field: 'humidity',
         mode: 'mean5m',
         deviceId: '84F7035346E0',
       );
 
-      print('Humidity Response:');
-      print('- hasError: ${humidityResponse.hasError}');
-      print('- hasResults: ${humidityResponse.hasResults}');
+      debugPrint('Humidity Response:');
+      debugPrint('- hasError: ${humidityResponse.hasError}');
+      debugPrint('- hasResults: ${humidityResponse.hasResults}');
       if (humidityResponse.hasError) {
-        print('- error: ${humidityResponse.error}');
+        debugPrint('- error: ${humidityResponse.error}');
       }
       if (humidityResponse.hasResults) {
-        print('- results: ${humidityResponse.results}');
+        debugPrint('- results: ${humidityResponse.results}');
       }
 
       // 测试3: 自定义查询
-      print('\n=== 测试3: 自定义查询 (最新心率) ===');
+      debugPrint('\n=== 测试3: 自定义查询 (最新心率) ===');
       const customQuery = '''
 from(bucket: "vitals_data")
   |> range(start: -1h)
@@ -2857,18 +2825,18 @@ from(bucket: "vitals_data")
 ''';
 
       final customResponse = await _influxDBService.query(query: customQuery);
-      print('Custom Query Response:');
-      print('- hasError: ${customResponse.hasError}');
-      print('- hasResults: ${customResponse.hasResults}');
+      debugPrint('Custom Query Response:');
+      debugPrint('- hasError: ${customResponse.hasError}');
+      debugPrint('- hasResults: ${customResponse.hasResults}');
       if (customResponse.hasError) {
-        print('- error: ${customResponse.error}');
+        debugPrint('- error: ${customResponse.error}');
       }
       if (customResponse.hasResults) {
-        print('- results: ${customResponse.results}');
+        debugPrint('- results: ${customResponse.results}');
       }
 
       // 测试4: 查询所有可用字段
-      print('\n=== 测试4: 查询所有字段 ===');
+      debugPrint('\n=== 测试4: 查询所有字段 ===');
       const allFieldsQuery = '''
 from(bucket: "vitals_data")
   |> range(start: -10m)
@@ -2880,11 +2848,11 @@ from(bucket: "vitals_data")
       final allFieldsResponse = await _influxDBService.query(
         query: allFieldsQuery,
       );
-      print('All Fields Response:');
-      print('- hasError: ${allFieldsResponse.hasError}');
-      print('- hasResults: ${allFieldsResponse.hasResults}');
+      debugPrint('All Fields Response:');
+      debugPrint('- hasError: ${allFieldsResponse.hasError}');
+      debugPrint('- hasResults: ${allFieldsResponse.hasResults}');
       if (allFieldsResponse.hasResults) {
-        print('- results: ${allFieldsResponse.results}');
+        debugPrint('- results: ${allFieldsResponse.results}');
       }
 
       // 在聊天中显示测试结果摘要
@@ -2913,7 +2881,7 @@ from(bucket: "vitals_data")
       _scrollToBottom();
       _showCustomSnackbar('InfluxDB 数据测试完成，请查看控制台');
     } catch (e) {
-      print('InfluxDB 测试异常: $e');
+      debugPrint('InfluxDB 测试异常: $e');
       _showCustomSnackbar('InfluxDB 测试失败: $e');
     }
   }
@@ -3031,7 +2999,7 @@ from(bucket: "vitals_data")
   // 测试原始 HTTP 响应
   Future<void> _testRawInfluxDBResponse() async {
     try {
-      print('\n=== 原始 InfluxDB HTTP 响应测试 ===');
+      debugPrint('\n=== 原始 InfluxDB HTTP 响应测试 ===');
 
       // 直接测试 HTTP 请求
       final queryUrl = Uri.parse('${_influxDBService.influxUrl}/api/v2/query');
@@ -3047,11 +3015,11 @@ from(bucket: "vitals_data")
 
       final requestBody = json.encode({'query': testQuery});
 
-      print('Request URL: $finalUrl');
-      print(
+      debugPrint('Request URL: $finalUrl');
+      debugPrint(
         'Request Headers: Authorization: Token ${_influxDBService.influxToken.substring(0, 20)}...',
       );
-      print('Request Body: $requestBody');
+      debugPrint('Request Body: $requestBody');
 
       final response = await http
           .post(
@@ -3066,14 +3034,14 @@ from(bucket: "vitals_data")
           )
           .timeout(const Duration(seconds: 30));
 
-      print('\nRaw Response:');
-      print('Status Code: ${response.statusCode}');
-      print('Headers: ${response.headers}');
-      print('Body Length: ${response.body.length}');
-      print('Body Content:');
-      print('--- START ---');
-      print(response.body);
-      print('--- END ---');
+      debugPrint('\nRaw Response:');
+      debugPrint('Status Code: ${response.statusCode}');
+      debugPrint('Headers: ${response.headers}');
+      debugPrint('Body Length: ${response.body.length}');
+      debugPrint('Body Content:');
+      debugPrint('--- START ---');
+      debugPrint(response.body);
+      debugPrint('--- END ---');
 
       // 在聊天中显示原始响应摘要
       final conversationProvider = Provider.of<ConversationProvider>(
@@ -3091,7 +3059,7 @@ from(bucket: "vitals_data")
             '完整响应内容请查看控制台输出',
       );
     } catch (e) {
-      print('原始响应测试异常: $e');
+      debugPrint('原始响应测试异常: $e');
       _showCustomSnackbar('原始响应测试失败: $e');
     }
   }
