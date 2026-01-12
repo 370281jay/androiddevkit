@@ -63,6 +63,9 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _showCameraPane = false;
   double _cameraRotation = 0;
 
+  // ✅ 新增：自动实时监听状态
+  bool _isAutoListening = false;
+
   // 添加自动拍照相关变量
   Timer? _autoPhotoTimer;
   bool _autoPhotoEnabled = false;
@@ -83,7 +86,9 @@ class _ChatScreenState extends State<ChatScreen> {
   PageController? _stepsPageController;
   bool _showStepDetails = false;
   ScrollController _stepsScrollController = ScrollController(); // 新增：步骤列表滚动控制器
-  int? _expandedStepIndex; // 新增：当前展开的步骤索引
+  int? _expandedStepIndex;
+  
+  get response => null; // 新增：当前展开的步骤索引
 
   @override
   void initState() {
@@ -149,6 +154,9 @@ class _ChatScreenState extends State<ChatScreen> {
         // 默认启用语音输入
         debugPrint('🔵 [PostFrameCallback] 启用语音输入模式');
         setState(() => _isVoiceInputMode = true);
+
+        // ✅ 连接就绪后自动开启实时监听（auto）
+        Future.microtask(_maybeStartAutoListening);
 
         // ✅ WebSocket 连接成功后，显示实验选择
         debugPrint('🔵 [PostFrameCallback] 调用 _scheduleExperimentSelection()');
@@ -261,8 +269,10 @@ from(bucket: "vitals_data")
     _vitalsTimer?.cancel();
     _stepsPageController?.dispose();
     _stepsScrollController.dispose(); // 新增：释放滚动控制器
-
+    
     if (_xiaozhiService != null) {
+      // 离开页面时显式停止监听与播放
+      _xiaozhiService!.stopListeningCall();
       _xiaozhiService!.stopPlayback();
       _xiaozhiService!.disconnect();
     }
@@ -671,11 +681,7 @@ from(bucket: "vitals_data")
   // 处理小智消息
   void _handleXiaozhiMessage(XiaozhiServiceEvent event) {
     if (!mounted) return;
-
-    final conversationProvider = Provider.of<ConversationProvider>(
-      context,
-      listen: false,
-    );
+    final conversationProvider = Provider.of<ConversationProvider>(context, listen: false);
 
     if (event.type == XiaozhiServiceEventType.textMessage) {
       // 直接使用文本内容
@@ -707,8 +713,16 @@ from(bucket: "vitals_data")
         });
       }
     } else if (event.type == XiaozhiServiceEventType.connected ||
-        event.type == XiaozhiServiceEventType.disconnected) {
-      // 当连接状态发生变化时，更新UI
+               event.type == XiaozhiServiceEventType.disconnected) {
+      // ✅ 连接变更时联动实时监听
+      if (event.type == XiaozhiServiceEventType.connected) {
+        _maybeStartAutoListening();
+      } else {
+        if (_isAutoListening) {
+          _stopWaveAnimation();
+          setState(() { _isAutoListening = false; });
+        }
+      }
       setState(() {});
     }
   }
@@ -970,8 +984,9 @@ from(bucket: "vitals_data")
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black, size: 26),
           onPressed: () {
-            // 返回前停止播放
+            // 返回前停止监听与播放
             if (_xiaozhiService != null) {
+              _xiaozhiService!.stopListeningCall();
               _xiaozhiService!.stopPlayback();
             }
             Navigator.of(context).pop();
@@ -1559,8 +1574,8 @@ from(bucket: "vitals_data")
                       !hasText)
                     _buildCameraAction(),
                   _buildSendButton(hasText),
-                  if (widget.conversation.type == ConversationType.xiaozhi &&
-                      !hasText)
+                  // 文本输入区域内麦克风按钮
+                  if (widget.conversation.type == ConversationType.xiaozhi && !hasText)
                     IconButton(
                       icon: const Icon(
                         Icons.mic,
@@ -1571,6 +1586,8 @@ from(bucket: "vitals_data")
                         setState(() {
                           _isVoiceInputMode = true;
                         });
+                        // ✅ 进入语音模式后，立刻尝试开启实时监听
+                        _maybeStartAutoListening();
                       },
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       constraints: const BoxConstraints(),
@@ -1610,111 +1627,41 @@ from(bucket: "vitals_data")
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Expanded(
-            child: GestureDetector(
-              onLongPressStart: (details) {
-                setState(() {
-                  _isRecording = true;
-                  _isCancelling = false;
-                  _startDragY = details.globalPosition.dy;
-                });
-                _startRecording();
-                _startWaveAnimation();
-              },
-              onLongPressMoveUpdate: (details) {
-                // 计算垂直移动距离
-                final double dragDistance =
-                    _startDragY - details.globalPosition.dy;
-
-                // 如果上滑超过阈值，标记为取消状态
-                if (dragDistance > _cancelThreshold && !_isCancelling) {
-                  setState(() {
-                    _isCancelling = true;
-                  });
-                  // 震动反馈
-                  HapticFeedback.mediumImpact();
-                } else if (dragDistance <= _cancelThreshold && _isCancelling) {
-                  setState(() {
-                    _isCancelling = false;
-                  });
-                  // 震动反馈
-                  HapticFeedback.lightImpact();
-                }
-              },
-              onLongPressEnd: (details) {
-                final wasRecording = _isRecording;
-                final wasCancelling = _isCancelling;
-
-                setState(() {
-                  _isRecording = false;
-                });
-
-                _stopWaveAnimation();
-
-                if (wasRecording) {
-                  if (wasCancelling) {
-                    _cancelRecording();
-                  } else {
-                    _stopRecording();
-                  }
-                }
-              },
-              child: Container(
-                height: 54,
-                decoration: BoxDecoration(
-                  color:
-                      _isRecording
-                          ? _isCancelling
-                              ? Colors.red.shade50
-                              : Colors.blue.shade50
-                          : const Color(0xFFF5F7F9),
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.07),
-                      blurRadius: 8,
-                      spreadRadius: 0,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // 波纹动画效果
-                    if (_isRecording && !_isCancelling)
-                      _buildWaveAnimationIndicator(),
-
-                    // 文字提示
-                    Center(
-                      child: Text(
-                        _isRecording
-                            ? _isCancelling
-                                ? "松开手指，取消发送"
-                                : "松开发送，上滑取消"
-                            : "按住说话",
-                        style: TextStyle(
-                          color:
-                              _isRecording
-                                  ? _isCancelling
-                                      ? Colors.red
-                                      : Colors.blue.shade700
-                                  : const Color.fromARGB(255, 9, 9, 9),
-                          fontSize: 16,
-                          fontWeight:
-                              _isRecording
-                                  ? FontWeight.w500
-                                  : FontWeight.normal,
-                        ),
+            // ⬇️ 移除长按手势，改为纯展示
+            child: Container(
+              height: 54,
+              decoration: BoxDecoration(
+                color: _isAutoListening ? Colors.blue.shade50 : const Color(0xFFF5F7F9),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.07),
+                    blurRadius: 8,
+                    spreadRadius: 0,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  if (_isAutoListening) _buildWaveAnimationIndicator(),
+                  Center(
+                    child: Text(
+                      _isAutoListening ? "自动实时监听中..." : "自动监听就绪",
+                      style: TextStyle(
+                        color: _isAutoListening ? Colors.blue.shade700 : const Color.fromARGB(255, 9, 9, 9),
+                        fontSize: 16,
+                        fontWeight: _isAutoListening ? FontWeight.w500 : FontWeight.normal,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
           const SizedBox(width: 10),
-
-          // 新增：相机按钮（语音模式也可拍照识别）
+          // 相机按钮
           Container(
             decoration: BoxDecoration(
               color: Colors.white,
@@ -1752,8 +1699,7 @@ from(bucket: "vitals_data")
             ),
           ),
           const SizedBox(width: 10),
-
-          // 键盘按钮 (切换回文本模式)
+          // 键盘按钮（切回文本并停止实时监听）
           Container(
             decoration: BoxDecoration(
               color: Colors.white,
@@ -1775,16 +1721,11 @@ from(bucket: "vitals_data")
             ),
             child: Material(
               color: Colors.transparent,
-              shape: CircleBorder(),
+              shape: const CircleBorder(),
               child: InkWell(
                 borderRadius: BorderRadius.circular(25),
                 onTap: () {
-                  // 如果正在录音，先取消录音
-                  if (_isRecording) {
-                    _cancelRecording();
-                    _stopWaveAnimation();
-                  }
-                  // 切换回文本输入模式
+                  _stopAutoListening();
                   setState(() {
                     _isVoiceInputMode = false;
                     _isRecording = false;
@@ -1806,7 +1747,6 @@ from(bucket: "vitals_data")
       ),
     );
   }
-
   // 发送按钮（在输入栏右侧使用）
   Widget _buildSendButton(bool hasText) {
     return IconButton(
@@ -1853,7 +1793,45 @@ from(bucket: "vitals_data")
       tooltip: '拍照识别',
     );
   }
+  // 尝试开启自动监听
+  void _maybeStartAutoListening() {
+    if (!mounted) return;
+    if (widget.conversation.type != ConversationType.xiaozhi) return;
+    if (_xiaozhiService?.isConnected != true) return;
+    if (!_isVoiceInputMode) return;
+    if (_isAutoListening) return;
+    _startAutoListening();
+  }
 
+  // 开启自动监听（由后端VAD分段、停声即发送）
+  Future<void> _startAutoListening() async {
+    if (_xiaozhiService == null) return;
+    try {
+      await _xiaozhiService!.startListeningCall();
+      if (!mounted) return;
+      setState(() { _isAutoListening = true; });
+      _startWaveAnimation();
+      debugPrint('🟢 [Chat] 已进入自动监听模式');
+    } catch (e) {
+      debugPrint('🔴 [Chat] 自动监听启动失败: $e');
+      _showCustomSnackbar('监听启动失败: $e');
+      if (!mounted) return;
+      setState(() { _isAutoListening = false; });
+    }
+  }
+
+  // 停止自动监听
+  Future<void> _stopAutoListening() async {
+    try {
+      await _xiaozhiService?.stopListeningCall();
+    } catch (e) {
+      debugPrint('⚠️ [Chat] 停止自动监听异常: $e');
+    } finally {
+      if (!mounted) return;
+      setState(() { _isAutoListening = false; });
+      _stopWaveAnimation();
+    }
+  }
   // 开始录音
   void _startRecording() async {
     if (widget.conversation.type != ConversationType.xiaozhi ||
@@ -2434,16 +2412,11 @@ from(bucket: "vitals_data")
         imageLocalPath: localPath,
       );
 
-      _scrollToBottom();
-
-      // 上传图片到Dify API
-      final response = await _difyService!.uploadFile(File(localPath));
-
       if (response.containsKey('id')) {
         final fileId = response['id'];
         final messageContent = "";
 
-        // 更新最后一条用户消息为实际的图片消息
+        // 更新最后一条用户消息为 实际的图片消息
         await conversationProvider.updateLastUserMessage(
           conversationId: widget.conversation.id,
           content: messageContent,

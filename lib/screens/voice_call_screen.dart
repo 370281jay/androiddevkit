@@ -112,12 +112,13 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
 
   @override
   void dispose() {
+    // 离开页面时显式停止监听与播放
+    _xiaozhiService.stopListeningCall();
     // 切换回普通聊天模式
     _xiaozhiService.switchToChatMode();
     _callTimer?.cancel();
     _audioVisualizerTimer?.cancel();
     _animationController.dispose();
-
     // 确保停止所有音频播放
     _xiaozhiService.stopPlayback();
 
