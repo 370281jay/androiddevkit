@@ -29,8 +29,6 @@ import 'package:ai_assistant/widgets/native_camerax_preview.dart';
 import 'package:ai_assistant/widgets/camerax_right_preview.dart';
 import 'package:ai_assistant/models/experiment.dart';
 
-
-
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
 
@@ -88,13 +86,13 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _showStepDetails = false;
   ScrollController _stepsScrollController = ScrollController(); // 新增：步骤列表滚动控制器
   int? _expandedStepIndex;
-  
+
   get response => null; // 新增：当前展开的步骤索引
 
   // 新增：播报结束防抖定时器
-  Timer? _ttsDebounceTimer;          // 新增：播报结束防抖定时器
-  String _currentAnswerText = '';     // 新增：当前助手回答累计文本
-  DateTime? _lastAnswerCaptureAt;     // 新增：节流，避免过频触发
+  Timer? _ttsDebounceTimer; // 新增：播报结束防抖定时器
+  String _currentAnswerText = ''; // 新增：当前助手回答累计文本
+  DateTime? _lastAnswerCaptureAt; // 新增：节流，避免过频触发
   // 新增：记录“已为该用户问题拍照”的最后一条用户文本消息ID与内容
   String? _lastCapturedUserMessageId;
   String? _lastCapturedUserQuestion;
@@ -122,43 +120,46 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // ✅ 仅一个 addPostFrameCallback，统一处理所有初始化
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      debugPrint('🟢 [PostFrameCallback] 执行开始 - 会话类型: ${widget.conversation.type}');
+      debugPrint(
+        '🟢 [PostFrameCallback] 执行开始 - 会话类型: ${widget.conversation.type}',
+      );
 
       // 1️⃣ 标记已读
       debugPrint('🔵 [PostFrameCallback] 标记会话已读');
-      Provider.of<ConversationProvider>(context, listen: false)
-          .markConversationAsRead(widget.conversation.id);
+      Provider.of<ConversationProvider>(
+        context,
+        listen: false,
+      ).markConversationAsRead(widget.conversation.id);
 
       // 2️⃣ 根据对话类型初始化服务
       if (widget.conversation.type == ConversationType.xiaozhi) {
         debugPrint('🔵 [PostFrameCallback] 检测到 Xiaozhi 会话，开始初始化 WebSocket');
-        
+
         try {
           // 先连小智
           debugPrint('🔵 [PostFrameCallback] 调用 _initXiaozhiService()');
           await _initXiaozhiService();
-          debugPrint('🟢 [PostFrameCallback] _initXiaozhiService() 完成，连接状态: ${_xiaozhiService?.isConnected}');
+          debugPrint(
+            '🟢 [PostFrameCallback] _initXiaozhiService() 完成，连接状态: ${_xiaozhiService?.isConnected}',
+          );
         } catch (e) {
           debugPrint('🔴 [PostFrameCallback] _initXiaozhiService() 失败: $e');
         }
 
         // 监控连接状态
         debugPrint('🔵 [PostFrameCallback] 启动连接监控定时器');
-        _connectionCheckTimer = Timer.periodic(
-          const Duration(seconds: 2),
-          (_) {
-            if (!mounted || _xiaozhiService == null) return;
-            final wasConnected = _xiaozhiService!.isConnected;
-            debugPrint('🟡 [ConnectionCheck] 连接状态: $wasConnected');
-            setState(() {});
-            if (wasConnected &&
-                !_xiaozhiService!.isConnected &&
-                _autoReconnectTimer == null) {
-              debugPrint('⚠️ [ConnectionCheck] 连接断开，触发重连');
-              _scheduleReconnect();
-            }
-          },
-        );
+        _connectionCheckTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+          if (!mounted || _xiaozhiService == null) return;
+          final wasConnected = _xiaozhiService!.isConnected;
+          debugPrint('🟡 [ConnectionCheck] 连接状态: $wasConnected');
+          setState(() {});
+          if (wasConnected &&
+              !_xiaozhiService!.isConnected &&
+              _autoReconnectTimer == null) {
+            debugPrint('⚠️ [ConnectionCheck] 连接断开，触发重连');
+            _scheduleReconnect();
+          }
+        });
 
         // 默认启用语音输入
         debugPrint('🔵 [PostFrameCallback] 启用语音输入模式');
@@ -178,7 +179,7 @@ class _ChatScreenState extends State<ChatScreen> {
       // 3️⃣ 启动其他后台服务
       debugPrint('🔵 [PostFrameCallback] 启动 InfluxDB 烟雾测试');
       _influxSmokeTest();
-      
+
       debugPrint('🔵 [PostFrameCallback] 启动体征数据轮询');
       _startVitalsPolling();
 
@@ -278,8 +279,8 @@ from(bucket: "vitals_data")
     _vitalsTimer?.cancel();
     _stepsPageController?.dispose();
     _stepsScrollController.dispose(); // 新增：释放滚动控制器
-    _ttsDebounceTimer?.cancel();      // 新增：释放播报结束定时器
-    
+    _ttsDebounceTimer?.cancel(); // 新增：释放播报结束定时器
+
     if (_xiaozhiService != null) {
       // 离开页面时显式停止监听与播放
       _xiaozhiService!.stopListeningCall();
@@ -490,7 +491,11 @@ from(bucket: "vitals_data")
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 2)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
@@ -502,7 +507,11 @@ from(bucket: "vitals_data")
               Expanded(
                 child: Text(
                   '实验: ${_selectedExperiment!.name}',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -562,10 +571,16 @@ from(bucket: "vitals_data")
                           height: itemHeight,
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           decoration: BoxDecoration(
-                            color: isActive ? Colors.blue.shade50 : Colors.grey.shade50,
+                            color:
+                                isActive
+                                    ? Colors.blue.shade50
+                                    : Colors.grey.shade50,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: isActive ? Colors.blue.shade300 : Colors.transparent,
+                              color:
+                                  isActive
+                                      ? Colors.blue.shade300
+                                      : Colors.transparent,
                               width: 1.5,
                             ),
                           ),
@@ -576,12 +591,19 @@ from(bucket: "vitals_data")
                                 height: 30,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: isActive ? Colors.blue : Colors.grey.shade400,
+                                  color:
+                                      isActive
+                                          ? Colors.blue
+                                          : Colors.grey.shade400,
                                 ),
                                 child: Center(
                                   child: Text(
                                     '${step.index}',
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -592,15 +614,23 @@ from(bucket: "vitals_data")
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
-                                    color: isActive ? Colors.blue.shade800 : Colors.grey.shade700,
+                                    color:
+                                        isActive
+                                            ? Colors.blue.shade800
+                                            : Colors.grey.shade700,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                               Icon(
-                                isActive ? Icons.expand_less : Icons.chevron_right,
-                                color: isActive ? Colors.blue : Colors.grey.shade500,
+                                isActive
+                                    ? Icons.expand_less
+                                    : Icons.chevron_right,
+                                color:
+                                    isActive
+                                        ? Colors.blue
+                                        : Colors.grey.shade500,
                                 size: 20,
                               ),
                             ],
@@ -612,33 +642,45 @@ from(bucket: "vitals_data")
                       AnimatedSize(
                         duration: const Duration(milliseconds: 220),
                         curve: Curves.easeInOut,
-                        child: isActive
-                            ? Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.shade50,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: Colors.blue.shade100),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '${step.index}. ${step.name}',
-                                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.blue),
+                        child:
+                            isActive
+                                ? Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.shade50,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: Colors.blue.shade100,
                                       ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        step.instruction,
-                                        style: TextStyle(fontSize: 13, color: Colors.grey.shade800, height: 1.5),
-                                      ),
-                                    ],
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${step.index}. ${step.name}',
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.blue,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          step.instruction,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.grey.shade800,
+                                            height: 1.5,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              )
-                            : const SizedBox.shrink(),
+                                )
+                                : const SizedBox.shrink(),
                       ),
                     ],
                   );
@@ -662,7 +704,9 @@ from(bucket: "vitals_data")
       (config) => config.id == widget.conversation.configId,
     );
 
-    debugPrint('🟡 [_initXiaozhiService] 配置 - URL: ${xiaozhiConfig.websocketUrl}, MAC: ${xiaozhiConfig.macAddress}');
+    debugPrint(
+      '🟡 [_initXiaozhiService] 配置 - URL: ${xiaozhiConfig.websocketUrl}, MAC: ${xiaozhiConfig.macAddress}',
+    );
 
     _xiaozhiService = XiaozhiService(
       websocketUrl: xiaozhiConfig.websocketUrl,
@@ -677,7 +721,9 @@ from(bucket: "vitals_data")
     debugPrint('🟡 [_initXiaozhiService] 调用 connect()');
     try {
       await _xiaozhiService!.connect();
-      debugPrint('🟢 [_initXiaozhiService] 连接成功，状态: ${_xiaozhiService!.isConnected}');
+      debugPrint(
+        '🟢 [_initXiaozhiService] 连接成功，状态: ${_xiaozhiService!.isConnected}',
+      );
     } catch (e) {
       debugPrint('🔴 [_initXiaozhiService] 连接失败: $e');
       rethrow;
@@ -688,10 +734,14 @@ from(bucket: "vitals_data")
       setState(() {});
     }
   }
+
   // 处理小智消息
   void _handleXiaozhiMessage(XiaozhiServiceEvent event) {
     if (!mounted) return;
-    final conversationProvider = Provider.of<ConversationProvider>(context, listen: false);
+    final conversationProvider = Provider.of<ConversationProvider>(
+      context,
+      listen: false,
+    );
 
     if (event.type == XiaozhiServiceEventType.textMessage) {
       // 直接使用文本内容
@@ -707,9 +757,10 @@ from(bucket: "vitals_data")
         );
 
         // 新增：助手文本“防抖”判定播报结束（本地判断，不依赖后端）
-        _currentAnswerText = (_currentAnswerText.isEmpty)
-            ? content
-            : '$_currentAnswerText $content';
+        _currentAnswerText =
+            (_currentAnswerText.isEmpty)
+                ? content
+                : '$_currentAnswerText $content';
 
         // 每次收到助手文本都重置4秒防抖；4秒内若无新的文本则认定播报结束
         _ttsDebounceTimer?.cancel();
@@ -737,14 +788,16 @@ from(bucket: "vitals_data")
         });
       }
     } else if (event.type == XiaozhiServiceEventType.connected ||
-               event.type == XiaozhiServiceEventType.disconnected) {
+        event.type == XiaozhiServiceEventType.disconnected) {
       // ✅ 连接变更时联动实时监听
       if (event.type == XiaozhiServiceEventType.connected) {
         _maybeStartAutoListening();
       } else {
         if (_isAutoListening) {
           _stopWaveAnimation();
-          setState(() { _isAutoListening = false; });
+          setState(() {
+            _isAutoListening = false;
+          });
         }
       }
       setState(() {});
@@ -869,10 +922,12 @@ from(bucket: "vitals_data")
 
   Widget _buildVitalsBar() {
     final hr = _heartRateBpm != null ? _heartRateBpm!.toStringAsFixed(0) : '—';
-    final rr = _respirationBpm != null ? _respirationBpm!.toStringAsFixed(0) : '—';
-    final ts = _vitalsUpdatedAt != null
-        ? _vitalsUpdatedAt!.toLocal().toIso8601String().substring(11, 19)
-        : '--:--:--';
+    final rr =
+        _respirationBpm != null ? _respirationBpm!.toStringAsFixed(0) : '—';
+    final ts =
+        _vitalsUpdatedAt != null
+            ? _vitalsUpdatedAt!.toLocal().toIso8601String().substring(11, 19)
+            : '--:--:--';
 
     Color hrColor;
     if (_heartRateBpm == null) {
@@ -896,7 +951,10 @@ from(bucket: "vitals_data")
       height: 64, // 固定高度：由原 52 提升到 64
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), // 垂直内边距增大
+        padding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 12,
+        ), // 垂直内边距增大
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(10),
@@ -932,10 +990,16 @@ from(bucket: "vitals_data")
               ),
             ),
             const Spacer(),
-            Icon(_vitalsLoading ? Icons.sync : Icons.schedule,
-                size: 20, color: Colors.grey[600]), // 原 16
+            Icon(
+              _vitalsLoading ? Icons.sync : Icons.schedule,
+              size: 20,
+              color: Colors.grey[600],
+            ), // 原 16
             const SizedBox(width: 6),
-            Text(ts, style: TextStyle(color: Colors.grey[600], fontSize: 13)), // 原 12
+            Text(
+              ts,
+              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+            ), // 原 12
           ],
         ),
       ),
@@ -1192,73 +1256,82 @@ from(bucket: "vitals_data")
         // 左侧：摄像头预览（含体征条悬浮）
         Expanded(
           flex: 2,
-          child: _showCameraPane
-              ? Stack(
-                  children: [
-                    // 先放预览，再放叠加层
-                    RotatedBox(
-                      quarterTurns: 3, // 逆时针90度
-                      child: const CameraXRightPreview(
-                        lensFacing: 'external',
-                        implementationMode: 'COMPATIBLE', // 强制TextureView
-                        scaleType: 'FILL_CENTER',
+          child:
+              _showCameraPane
+                  ? Stack(
+                    children: [
+                      // 先放预览，再放叠加层
+                      RotatedBox(
+                        quarterTurns: 3, // 逆时针90度
+                        child: const CameraXRightPreview(
+                          lensFacing: 'external',
+                          implementationMode: 'COMPATIBLE', // 强制TextureView
+                          scaleType: 'FILL_CENTER',
+                        ),
                       ),
-                    ),
-                    Positioned(
-                      top: 12,
-                      left: 12,
-                      right: 72,
-                      child: _buildVitalsBar(),
-                    ),
-                    Positioned(
-                      top: 16,
-                      right: 16,
-                      child: Row(
-                        children: [
-                          // 自动拍照按钮
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.6),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: IconButton(
-                              icon: Icon(
-                                _autoPhotoEnabled
-                                    ? Icons.camera_roll
-                                    : Icons.camera_alt_outlined,
-                                color: _autoPhotoEnabled ? Colors.red : Colors.white,
-                                size: 24,
-                              ),
-                              onPressed: _toggleAutoPhoto,
-                              tooltip: _autoPhotoEnabled ? '停止自动拍照' : '启动自动拍照',
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          // 关闭摄像头
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.6),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: IconButton(
-                              icon: Icon(
-                                _showCameraPane ? Icons.videocam_off : Icons.videocam,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                              onPressed: () {
-                                setState(() => _showCameraPane = !_showCameraPane);
-                                if (!_showCameraPane) _stopAutoPhoto();
-                              },
-                              tooltip: _showCameraPane ? '关闭摄像头' : '打开摄像头',
-                            ),
-                          ),
-                        ],
+                      Positioned(
+                        top: 12,
+                        left: 12,
+                        right: 72,
+                        child: _buildVitalsBar(),
                       ),
-                    ),
-                  ],
-                )
-              : _buildRightPlaceholder(),
+                      Positioned(
+                        top: 16,
+                        right: 16,
+                        child: Row(
+                          children: [
+                            // 自动拍照按钮
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.6),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: IconButton(
+                                icon: Icon(
+                                  _autoPhotoEnabled
+                                      ? Icons.camera_roll
+                                      : Icons.camera_alt_outlined,
+                                  color:
+                                      _autoPhotoEnabled
+                                          ? Colors.red
+                                          : Colors.white,
+                                  size: 24,
+                                ),
+                                onPressed: _toggleAutoPhoto,
+                                tooltip:
+                                    _autoPhotoEnabled ? '停止自动拍照' : '启动自动拍照',
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // 关闭摄像头
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.6),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: IconButton(
+                                icon: Icon(
+                                  _showCameraPane
+                                      ? Icons.videocam_off
+                                      : Icons.videocam,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                                onPressed: () {
+                                  setState(
+                                    () => _showCameraPane = !_showCameraPane,
+                                  );
+                                  if (!_showCameraPane) _stopAutoPhoto();
+                                },
+                                tooltip: _showCameraPane ? '关闭摄像头' : '打开摄像头',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                  : _buildRightPlaceholder(),
         ),
         Container(width: 1, color: Colors.grey.withOpacity(0.2)),
         // 右侧：聊天区域
@@ -1599,7 +1672,8 @@ from(bucket: "vitals_data")
                     _buildCameraAction(),
                   _buildSendButton(hasText),
                   // 文本输入区域内麦克风按钮
-                  if (widget.conversation.type == ConversationType.xiaozhi && !hasText)
+                  if (widget.conversation.type == ConversationType.xiaozhi &&
+                      !hasText)
                     IconButton(
                       icon: const Icon(
                         Icons.mic,
@@ -1655,7 +1729,10 @@ from(bucket: "vitals_data")
             child: Container(
               height: 54,
               decoration: BoxDecoration(
-                color: _isAutoListening ? Colors.blue.shade50 : const Color(0xFFF5F7F9),
+                color:
+                    _isAutoListening
+                        ? Colors.blue.shade50
+                        : const Color(0xFFF5F7F9),
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
@@ -1674,9 +1751,15 @@ from(bucket: "vitals_data")
                     child: Text(
                       _isAutoListening ? "自动实时监听中..." : "自动监听就绪",
                       style: TextStyle(
-                        color: _isAutoListening ? Colors.blue.shade700 : const Color.fromARGB(255, 9, 9, 9),
+                        color:
+                            _isAutoListening
+                                ? Colors.blue.shade700
+                                : const Color.fromARGB(255, 9, 9, 9),
                         fontSize: 16,
-                        fontWeight: _isAutoListening ? FontWeight.w500 : FontWeight.normal,
+                        fontWeight:
+                            _isAutoListening
+                                ? FontWeight.w500
+                                : FontWeight.normal,
                       ),
                     ),
                   ),
@@ -1771,6 +1854,7 @@ from(bucket: "vitals_data")
       ),
     );
   }
+
   // 发送按钮（在输入栏右侧使用）
   Widget _buildSendButton(bool hasText) {
     return IconButton(
@@ -1817,6 +1901,7 @@ from(bucket: "vitals_data")
       tooltip: '拍照识别',
     );
   }
+
   // 尝试开启自动监听
   void _maybeStartAutoListening() {
     if (!mounted) return;
@@ -1833,14 +1918,18 @@ from(bucket: "vitals_data")
     try {
       await _xiaozhiService!.startListeningCall();
       if (!mounted) return;
-      setState(() { _isAutoListening = true; });
+      setState(() {
+        _isAutoListening = true;
+      });
       _startWaveAnimation();
       debugPrint('🟢 [Chat] 已进入自动监听模式');
     } catch (e) {
       debugPrint('🔴 [Chat] 自动监听启动失败: $e');
       _showCustomSnackbar('监听启动失败: $e');
       if (!mounted) return;
-      setState(() { _isAutoListening = false; });
+      setState(() {
+        _isAutoListening = false;
+      });
     }
   }
 
@@ -1852,10 +1941,13 @@ from(bucket: "vitals_data")
       debugPrint('⚠️ [Chat] 停止自动监听异常: $e');
     } finally {
       if (!mounted) return;
-      setState(() { _isAutoListening = false; });
+      setState(() {
+        _isAutoListening = false;
+      });
       _stopWaveAnimation();
     }
   }
+
   // 开始录音
   void _startRecording() async {
     if (widget.conversation.type != ConversationType.xiaozhi ||
@@ -2326,7 +2418,8 @@ from(bucket: "vitals_data")
                             ),
                           ],
                         ),
-                        child: Icon(Icons.camera_alt,
+                        child: Icon(
+                          Icons.camera_alt,
                           color: Colors.green.shade600,
                           size: 24,
                         ),
@@ -2665,7 +2758,9 @@ from(bucket: "vitals_data")
       _showCustomSnackbar('自动拍照已启动（每10秒一次）');
 
       // 启动定时器，周期触发原生 CameraX 拍照
-      _autoPhotoTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      _autoPhotoTimer = Timer.periodic(const Duration(seconds: 10), (
+        timer,
+      ) async {
         if (!mounted || !_showCameraPane) return;
         if (_xiaozhiService?.isConnected != true) {
           debugPrint('自动拍照跳过：服务未连接');
@@ -2748,9 +2843,10 @@ from(bucket: "vitals_data")
     _lastAnswerCaptureAt = now;
 
     // 使用最近的用户文本作为 prompt
-    final prompt = lastUserMsg.content?.trim().isNotEmpty == true
-        ? lastUserMsg.content!.trim()
-        : '请根据用户刚才的提问分析这张图片';
+    final prompt =
+        lastUserMsg.content?.trim().isNotEmpty == true
+            ? lastUserMsg.content!.trim()
+            : '请根据用户刚才的提问分析这张图片';
 
     try {
       // 权限检查
@@ -2774,18 +2870,28 @@ from(bucket: "vitals_data")
       _lastCapturedUserQuestion = lastUserMsg.content?.trim();
 
       // 使用覆盖 prompt 的处理流程
-      await _handleCameraXPhotoPath(path, isAutoCapture: false, promptOverride: prompt);
+      await _handleCameraXPhotoPath(
+        path,
+        isAutoCapture: false,
+        promptOverride: prompt,
+      );
     } catch (e) {
       debugPrint('播报结束拍照异常: $e');
     }
   }
 
   // 处理来自原生 CameraX 的拍照路径（扩展：支持覆盖 prompt）
-  Future<void> _handleCameraXPhotoPath(String path, {bool isAutoCapture = false, String? promptOverride}) async {
+  Future<void> _handleCameraXPhotoPath(
+    String path, {
+    bool isAutoCapture = false,
+    String? promptOverride,
+  }) async {
     try {
       // 保存到会话目录
       final appDir = await getApplicationDocumentsDirectory();
-      final dir = Directory('${appDir.path}/conversations/${widget.conversation.id}/images');
+      final dir = Directory(
+        '${appDir.path}/conversations/${widget.conversation.id}/images',
+      );
       await dir.create(recursive: true);
 
       final prefix = isAutoCapture ? 'auto' : 'manual';
@@ -2794,10 +2900,16 @@ from(bucket: "vitals_data")
       await File(path).copy(saved.path);
 
       // 插入用户图片消息（识别中）
-      final conversationProvider = Provider.of<ConversationProvider>(context, listen: false);
-      final content = isAutoCapture
-          ? '[自动拍照 #$_photoCount - 识别中...]'
-          : (promptOverride != null ? '[播报结束拍照 - 识别中...]' : '[摄像头拍照 - 识别中...]');
+      final conversationProvider = Provider.of<ConversationProvider>(
+        context,
+        listen: false,
+      );
+      final content =
+          isAutoCapture
+              ? '[自动拍照 #$_photoCount - 识别中...]'
+              : (promptOverride != null
+                  ? '[播报结束拍照 - 识别中...]'
+                  : '[摄像头拍照 - 识别中...]');
 
       await conversationProvider.addMessage(
         conversationId: widget.conversation.id,
@@ -2808,7 +2920,10 @@ from(bucket: "vitals_data")
       );
 
       // 调用视觉识别服务
-      final configProvider = Provider.of<ConfigProvider>(context, listen: false);
+      final configProvider = Provider.of<ConfigProvider>(
+        context,
+        listen: false,
+      );
       final xiaozhiConfig = configProvider.xiaozhiConfigs.firstWhere(
         (c) => c.id == widget.conversation.configId,
       );
@@ -2825,14 +2940,13 @@ from(bucket: "vitals_data")
       );
 
       // 使用覆盖的 prompt；否则退回默认提示
-      final prompt = (promptOverride != null && promptOverride.trim().isNotEmpty)
-          ? promptOverride.trim()
-          : (isAutoCapture
-              ? '请简要分析这张自动拍摄的图片内容'
-              : '请识别这张摄像头拍摄的图片内容');
+      final prompt =
+          (promptOverride != null && promptOverride.trim().isNotEmpty)
+              ? promptOverride.trim()
+              : (isAutoCapture ? '请简要分析这张自动拍摄的图片内容' : '请识别这张摄像头拍摄的图片内容');
 
       final responseText = await vs.analyzeImage(saved, question: prompt);
-
+      debugPrint('视觉服务响应原文: $responseText');
       // Unicode解码处理
       final decodedResponse = _decodeUnicodeString(responseText);
 
@@ -2854,16 +2968,44 @@ from(bucket: "vitals_data")
     }
   }
 
-  // Unicode解码处理
+  // // Unicode解码处理
+  // String _decodeUnicodeString(String input) {
+  //   StringBuffer result = StringBuffer();
+  //   RegExp exp = RegExp(r'\\u([0-9a-fA-F]{4})');
+
+  //   input.replaceAllMapped(exp, (Match match) {
+  //     int codePoint = int.parse(match[1]!, radix: 16);
+  //     result.write(String.fromCharCode(codePoint));
+  //     return '';
+  //   });
+
+  //   return result.toString();
+  // }
+
   String _decodeUnicodeString(String input) {
     StringBuffer result = StringBuffer();
-    RegExp exp = RegExp(r'\\u([0-9a-fA-F]{4})');
+    int i = 0;
 
-    input.replaceAllMapped(exp, (Match match) {
-      int codePoint = int.parse(match[1]!, radix: 16);
-      result.write(String.fromCharCode(codePoint));
-      return '';
-    });
+    while (i < input.length) {
+      // 检查当前位置是否是 \u 开头
+      if (i + 6 <= input.length && input.substring(i, i + 2) == r'\u') {
+        // 提取可能的4位十六进制
+        String hexStr = input.substring(i + 2, i + 6);
+
+        // 验证这确实是4位十六进制数
+        if (RegExp(r'^[0-9a-fA-F]{4}$').hasMatch(hexStr)) {
+          // 解码Unicode字符
+          int codePoint = int.parse(hexStr, radix: 16);
+          result.write(String.fromCharCode(codePoint));
+          i += 6; // 跳过整个 \uXXXX
+          continue;
+        }
+      }
+
+      // 如果不是\uXXXX格式，直接复制字符
+      result.write(input[i]);
+      i++;
+    }
 
     return result.toString();
   }
@@ -3154,7 +3296,8 @@ from(bucket: "vitals_data")
         await conversationProvider.addMessage(
           conversationId: widget.conversation.id,
           role: MessageRole.assistant,
-          content: '支持的数据查询命令:\n'
+          content:
+              '支持的数据查询命令:\n'
               '/data temperature - 温度数据\n'
               '/data humidity - 湿度数据\n'
               '/data heart_rate - 心率数据\n'
