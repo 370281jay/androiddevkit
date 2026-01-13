@@ -164,7 +164,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             fontWeight: FontWeight.w500,
             fontSize: 16,
           ),
-          tabs: const [Tab(text: '通用'), Tab(text: 'Dify配置'), Tab(text: '小智服务')],
+          tabs: const [Tab(text: '通用'), Tab(text: 'Dify配置'), Tab(text: '知华君服务')],
         ),
       ),
     );
@@ -1107,7 +1107,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildCard(
-                title: '小智服务配置',
+                title: '知华君服务配置',
                 subtitle: '管理小智语音服务配置',
                 actionButton: ElevatedButton.icon(
                   onPressed: _showAddXiaozhiConfigDialog,

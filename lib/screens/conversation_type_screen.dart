@@ -227,7 +227,7 @@ class _ConversationTypeScreenState extends State<ConversationTypeScreen> {
 
                     if (xiaozhiConfigs.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('请先在设置中添加小智服务配置')),
+                        const SnackBar(content: Text('请先在设置中添加知华君服务配置')),
                       );
                       return;
                     }
@@ -305,7 +305,7 @@ class _ConversationTypeScreenState extends State<ConversationTypeScreen> {
                         ),
                         const SizedBox(height: 20),
                         const Text(
-                          '小智语音对话',
+                          '知华君语音对话',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
@@ -358,12 +358,12 @@ class _ConversationTypeScreenState extends State<ConversationTypeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '选择小智服务',
+                  '选择知华君服务',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '请选择要使用的小智语音服务',
+                  '请选择要使用的知华君语音服务',
                   style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
                 ),
               ],
