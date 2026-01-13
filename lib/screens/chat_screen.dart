@@ -91,6 +91,14 @@ class _ChatScreenState extends State<ChatScreen> {
   
   get response => null; // 新增：当前展开的步骤索引
 
+  // 新增：播报结束防抖定时器
+  Timer? _ttsDebounceTimer;          // 新增：播报结束防抖定时器
+  String _currentAnswerText = '';     // 新增：当前助手回答累计文本
+  DateTime? _lastAnswerCaptureAt;     // 新增：节流，避免过频触发
+  // 新增：记录“已为该用户问题拍照”的最后一条用户文本消息ID与内容
+  String? _lastCapturedUserMessageId;
+  String? _lastCapturedUserQuestion;
+
   @override
   void initState() {
     super.initState();
@@ -270,6 +278,7 @@ from(bucket: "vitals_data")
     _vitalsTimer?.cancel();
     _stepsPageController?.dispose();
     _stepsScrollController.dispose(); // 新增：释放滚动控制器
+    _ttsDebounceTimer?.cancel();      // 新增：释放播报结束定时器
     
     if (_xiaozhiService != null) {
       // 离开页面时显式停止监听与播放
@@ -696,6 +705,20 @@ from(bucket: "vitals_data")
           role: MessageRole.assistant,
           content: content,
         );
+
+        // 新增：助手文本“防抖”判定播报结束（本地判断，不依赖后端）
+        _currentAnswerText = (_currentAnswerText.isEmpty)
+            ? content
+            : '$_currentAnswerText $content';
+
+        // 每次收到助手文本都重置4秒防抖；4秒内若无新的文本则认定播报结束
+        _ttsDebounceTimer?.cancel();
+        _ttsDebounceTimer = Timer(const Duration(seconds: 4), () {
+          // 播报结束后执行一次拍照并发送
+          _captureAfterAnswerOnce();
+          // 清空当前累计文本
+          _currentAnswerText = '';
+        });
       }
     } else if (event.type == XiaozhiServiceEventType.userMessage) {
       // 处理用户的语音识别文本
@@ -2303,8 +2326,7 @@ from(bucket: "vitals_data")
                             ),
                           ],
                         ),
-                        child: Icon(
-                          Icons.camera_alt,
+                        child: Icon(Icons.camera_alt,
                           color: Colors.green.shade600,
                           size: 24,
                         ),
@@ -2492,8 +2514,8 @@ from(bucket: "vitals_data")
 
       final prefix = isAutoCapture ? 'auto' : 'manual';
       final fileName = '${prefix}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final saved = File('${dir.path}/$fileName');
-      await File(shot.path).copy(saved.path);
+      final savedFile = File('${dir.path}/$fileName');
+      await File(shot.path).copy(savedFile.path);
 
       // 插入用户图片消息（识别中）
       final conversationProvider = Provider.of<ConversationProvider>(
@@ -2509,7 +2531,7 @@ from(bucket: "vitals_data")
         role: MessageRole.user,
         content: content,
         isImage: true,
-        imageLocalPath: saved.path,
+        imageLocalPath: savedFile.path,
       );
 
       // 读取小智配置以复用认证
@@ -2531,7 +2553,7 @@ from(bucket: "vitals_data")
 
       final prompt = isAutoCapture ? '请简要分析这张自动拍摄的图片内容' : '请识别这张图片的内容';
 
-      final responseText = await vs.analyzeImage(saved, question: prompt);
+      final responseText = await vs.analyzeImage(savedFile, question: prompt);
 
       // Unicode解码处理
       String decodedResponse = _decodeUnicodeString(responseText);
@@ -2677,8 +2699,89 @@ from(bucket: "vitals_data")
     });
   }
 
-  // 处理来自原生 CameraX 的拍照路径
-  Future<void> _handleCameraXPhotoPath(String path, {bool isAutoCapture = false}) async {
+  // 查找最近一条用户文本消息（对象）
+  Message? _getLastUserTextMessage() {
+    final provider = Provider.of<ConversationProvider>(context, listen: false);
+    final msgs = provider.getMessages(widget.conversation.id);
+    for (int i = msgs.length - 1; i >= 0; i--) {
+      final m = msgs[i];
+      if (m.role == MessageRole.user && (m.isImage != true)) {
+        final txt = (m.content ?? '').trim();
+        if (txt.isNotEmpty) return m;
+      }
+    }
+    return null;
+  }
+
+  // 兼容旧用法：仅返回最近用户文本内容
+  String? _getLastUserQuestion() {
+    final m = _getLastUserTextMessage();
+    return m?.content?.trim();
+  }
+
+  // 在播报结束后执行一次拍照（若可用），并使用用户提问作为 prompt
+  Future<void> _captureAfterAnswerOnce() async {
+    // 仅在小智对话、摄像头已打开的情况下触发
+    if (widget.conversation.type != ConversationType.xiaozhi) return;
+    if (!_showCameraPane) return;
+
+    // 获取最近一条用户文本消息，若没有则不触发
+    final lastUserMsg = _getLastUserTextMessage();
+    if (lastUserMsg == null) {
+      debugPrint('播报结束拍照跳过：无用户文本问题');
+      return;
+    }
+
+    // 限制一次提问只拍一次：若最近用户消息ID已拍过则跳过
+    if (_lastCapturedUserMessageId != null &&
+        _lastCapturedUserMessageId == lastUserMsg.id) {
+      debugPrint('播报结束拍照跳过：该问题已拍过 (id=${lastUserMsg.id})');
+      return;
+    }
+
+    // 简单节流：避免短时间内重复触发
+    final now = DateTime.now();
+    if (_lastAnswerCaptureAt != null &&
+        now.difference(_lastAnswerCaptureAt!).inSeconds < 3) {
+      return;
+    }
+    _lastAnswerCaptureAt = now;
+
+    // 使用最近的用户文本作为 prompt
+    final prompt = lastUserMsg.content?.trim().isNotEmpty == true
+        ? lastUserMsg.content!.trim()
+        : '请根据用户刚才的提问分析这张图片';
+
+    try {
+      // 权限检查
+      final status = await Permission.camera.request();
+      if (status != PermissionStatus.granted) {
+        debugPrint('播报结束拍照：相机权限未授予');
+        return;
+      }
+
+      // 稍等平台视图与通道就绪
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      final String? path = await CameraXBridge.takePicture();
+      if (path == null || path.isEmpty) {
+        debugPrint('播报结束拍照失败：未返回路径');
+        return;
+      }
+
+      // 记录本次已拍的用户问题ID与内容，确保一次问题只拍一次
+      _lastCapturedUserMessageId = lastUserMsg.id;
+      _lastCapturedUserQuestion = lastUserMsg.content?.trim();
+
+      // 使用覆盖 prompt 的处理流程
+      await _handleCameraXPhotoPath(path, isAutoCapture: false, promptOverride: prompt);
+    } catch (e) {
+      debugPrint('播报结束拍照异常: $e');
+    }
+  }
+
+  // 处理来自原生 CameraX 的拍照路径（扩展：支持覆盖 prompt）
+  Future<void> _handleCameraXPhotoPath(String path, {bool isAutoCapture = false, String? promptOverride}) async {
     try {
       // 保存到会话目录
       final appDir = await getApplicationDocumentsDirectory();
@@ -2694,7 +2797,7 @@ from(bucket: "vitals_data")
       final conversationProvider = Provider.of<ConversationProvider>(context, listen: false);
       final content = isAutoCapture
           ? '[自动拍照 #$_photoCount - 识别中...]'
-          : '[摄像头拍照 - 识别中...]';
+          : (promptOverride != null ? '[播报结束拍照 - 识别中...]' : '[摄像头拍照 - 识别中...]');
 
       await conversationProvider.addMessage(
         conversationId: widget.conversation.id,
@@ -2711,7 +2814,6 @@ from(bucket: "vitals_data")
       );
 
       if (_xiaozhiService == null || !_xiaozhiService!.isConnected) {
-        // 尝试连接，防止 token 为空
         await _initXiaozhiService();
       }
 
@@ -2722,9 +2824,12 @@ from(bucket: "vitals_data")
         clientId: 'android-client',
       );
 
-      final prompt = isAutoCapture
-          ? '请简要分析这张自动拍摄的图片内容'
-          : '请识别这张摄像头拍摄的图片内容';
+      // 使用覆盖的 prompt；否则退回默认提示
+      final prompt = (promptOverride != null && promptOverride.trim().isNotEmpty)
+          ? promptOverride.trim()
+          : (isAutoCapture
+              ? '请简要分析这张自动拍摄的图片内容'
+              : '请识别这张摄像头拍摄的图片内容');
 
       final responseText = await vs.analyzeImage(saved, question: prompt);
 
