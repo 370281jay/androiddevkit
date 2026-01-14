@@ -765,9 +765,21 @@ from(bucket: "vitals_data")
                 ? content
                 : '$_currentAnswerText $content';
 
-        // 每次收到助手文本都重置4秒防抖；4秒内若无新的文本则认定播报结束
+        // 根据文本长度动态估计播报时延
+        // 基础时延：1秒，每个中文字符/单词约150ms，加上网络和TTS处理时延
+        int textLength = content.length;
+        int estimatedDelayMs = 1000 + (textLength * 150); // 基础1秒+文本时延
+        int maxDelayMs = 30000; // 最多等待30秒
+        int finalDelayMs = estimatedDelayMs.clamp(2000, maxDelayMs);
+
+        debugPrint(
+          '文本长度: $textLength, 估计播报时延: ${finalDelayMs}ms',
+        );
+
+        // 每次收到助手文本都重置防抖；在估计的时延内若无新的文本则认定播报结束
         _ttsDebounceTimer?.cancel();
-        _ttsDebounceTimer = Timer(const Duration(seconds: 4), () {
+        _ttsDebounceTimer = Timer(Duration(milliseconds: finalDelayMs), () {
+          debugPrint('播报完成（节流），执行拍照逻辑');
           // 播报结束后执行一次拍照并发送
           _captureAfterAnswerOnce();
           // 清空当前累计文本
