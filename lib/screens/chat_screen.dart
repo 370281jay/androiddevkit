@@ -88,6 +88,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _showStepDetails = false;
   ScrollController _stepsScrollController = ScrollController(); // 新增：步骤列表滚动控制器
   int? _expandedStepIndex;
+  bool _experimentEnded = false; // 新增：实验是否已结束
 
   get response => null; // 新增：当前展开的步骤索引
 
@@ -1334,12 +1335,13 @@ from(bucket: "vitals_data")
                       
                       // 实验控制面板（底部悬浮）
                       Positioned(
-                        bottom: 16,
+                        bottom: 60,
                         left: 12,
                         right: 12,
                         child: ExperimentControlPanel(
                           selectedExperiment: _selectedExperiment,
                           isConnected: _xiaozhiService?.isConnected ?? false,
+                          experimentEnded: _experimentEnded,
                           onPauseExperiment: _pauseExperiment,
                           onEndExperiment: _endExperiment,
                           onViewReport: _viewExperimentReport,
@@ -2843,9 +2845,9 @@ from(bucket: "vitals_data")
       // 结束实验并断开连接
       await _disconnectExperiment();
       
-      // 清除实验选择
+      // 标记实验已结束，但保留实验信息以便查看报告
       setState(() {
-        _selectedExperiment = null;
+        _experimentEnded = true;
         _currentStepIndex = 0;
         _expandedStepIndex = null;
         _showStepDetails = false;

@@ -4,6 +4,7 @@ import 'package:ai_assistant/models/experiment.dart';
 class ExperimentControlPanel extends StatelessWidget {
   final Experiment? selectedExperiment;
   final bool isConnected;
+  final bool experimentEnded; // 新增：实验是否已结束
   final VoidCallback? onPauseExperiment;
   final VoidCallback? onEndExperiment;
   final VoidCallback? onViewReport;
@@ -12,6 +13,7 @@ class ExperimentControlPanel extends StatelessWidget {
     Key? key,
     required this.selectedExperiment,
     required this.isConnected,
+    required this.experimentEnded, // 新增参数
     this.onPauseExperiment,
     this.onEndExperiment,
     this.onViewReport,
@@ -51,7 +53,7 @@ class ExperimentControlPanel extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                '实验控制',
+                experimentEnded ? '实验已结束' : '实验控制',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -71,8 +73,8 @@ class ExperimentControlPanel extends StatelessWidget {
                   icon: Icons.pause_circle_outline,
                   label: '暂停实验',
                   color: Colors.orange,
-                  onTap: onPauseExperiment,
-                  enabled: isConnected,
+                  onTap: experimentEnded ? null : onPauseExperiment,
+                  enabled: !experimentEnded && isConnected,
                 ),
               ),
               const SizedBox(width: 6),
@@ -83,8 +85,8 @@ class ExperimentControlPanel extends StatelessWidget {
                   icon: Icons.stop_circle_outlined,
                   label: '结束实验',
                   color: Colors.red,
-                  onTap: onEndExperiment,
-                  enabled: isConnected,
+                  onTap: experimentEnded ? null : onEndExperiment,
+                  enabled: !experimentEnded && isConnected,
                 ),
               ),
               const SizedBox(width: 6),
@@ -119,7 +121,7 @@ class ExperimentControlPanel extends StatelessWidget {
         onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(6),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
             color: enabled 
                 ? color.withOpacity(0.1) 
@@ -132,24 +134,28 @@ class ExperimentControlPanel extends StatelessWidget {
               width: 1,
             ),
           ),
-          child: Column(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 icon,
-                size: 18,
+                size: 16,
                 color: enabled ? color : Colors.grey,
               ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w500,
-                  color: enabled ? color : Colors.grey,
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    color: enabled ? color : Colors.grey,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
