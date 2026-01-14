@@ -88,6 +88,7 @@ class CameraXRightPreviewImpl(
         try {
             controller.bindToLifecycle(activity)
             previewView.controller = controller
+            
         } catch (e: Exception) {
             Log.e(TAG, "摄像头绑定失败: ${e.message}", e)
             try {

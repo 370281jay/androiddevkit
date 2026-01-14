@@ -64,8 +64,14 @@ class MessageBubble extends StatelessWidget {
                   child:
                       isThinking
                           ? _buildThinkingIndicator(context)
-                          : message.isImage
-                          ? _buildImageContent(context)
+                          : message.isImage && message.imageLocalPath != null
+                          ? Transform.rotate(
+                            angle: 3.1415926, // 180度
+                            child: Image.file(
+                              File(message.imageLocalPath!),
+                              fit: BoxFit.contain,
+                            ),
+                          )
                           : Text(
                             message.content,
                             style: TextStyle(

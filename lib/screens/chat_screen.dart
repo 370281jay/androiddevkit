@@ -506,7 +506,7 @@ from(bucket: "vitals_data")
             children: [
               Expanded(
                 child: Text(
-                  '实验: ${_selectedExperiment!.name}',
+                  _selectedExperiment!.name,
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
