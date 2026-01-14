@@ -28,6 +28,8 @@ import 'package:ai_assistant/screens/voice_call_screen.dart';
 import 'package:ai_assistant/widgets/native_camerax_preview.dart';
 import 'package:ai_assistant/widgets/camerax_right_preview.dart';
 import 'package:ai_assistant/models/experiment.dart';
+import 'package:ai_assistant/widgets/experiment_control_panel.dart';
+import 'package:ai_assistant/widgets/experiment_dialogs.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -1327,6 +1329,20 @@ from(bucket: "vitals_data")
                               ),
                             ),
                           ],
+                        ),
+                      ),
+                      
+                      // 实验控制面板（底部悬浮）
+                      Positioned(
+                        bottom: 16,
+                        left: 12,
+                        right: 12,
+                        child: ExperimentControlPanel(
+                          selectedExperiment: _selectedExperiment,
+                          isConnected: _xiaozhiService?.isConnected ?? false,
+                          onPauseExperiment: _pauseExperiment,
+                          onEndExperiment: _endExperiment,
+                          onViewReport: _viewExperimentReport,
                         ),
                       ),
                     ],
@@ -2793,6 +2809,99 @@ from(bucket: "vitals_data")
       _photoCount = 0;
     });
   }
+
+  // ========== 实验控制相关方法 ==========
+  
+  // 暂停实验
+  void _pauseExperiment() async {
+    if (_selectedExperiment == null) return;
+
+    final shouldReconnect = await ExperimentDialogs.showPauseDialog(
+      context,
+      _selectedExperiment!,
+    );
+
+    if (shouldReconnect == true) {
+      // 重新连接
+      _reconnectToExperiment();
+    } else {
+      // 断开连接
+      await _disconnectExperiment();
+    }
+  }
+
+  // 结束实验
+  void _endExperiment() async {
+    if (_selectedExperiment == null) return;
+
+    final shouldEnd = await ExperimentDialogs.showEndDialog(
+      context,
+      _selectedExperiment!,
+    );
+
+    if (shouldEnd == true) {
+      // 结束实验并断开连接
+      await _disconnectExperiment();
+      
+      // 清除实验选择
+      setState(() {
+        _selectedExperiment = null;
+        _currentStepIndex = 0;
+        _expandedStepIndex = null;
+        _showStepDetails = false;
+      });
+
+      _showCustomSnackbar('实验已结束');
+    }
+  }
+
+  // 查看实验报告
+  void _viewExperimentReport() async {
+    if (_selectedExperiment == null) return;
+
+    ExperimentDialogs.showReportDialog(context, _selectedExperiment!);
+  }
+
+  // 断开实验连接
+  Future<void> _disconnectExperiment() async {
+    try {
+      // 停止自动监听
+      await _stopAutoListening();
+      
+      // 断开WebSocket连接
+      if (_xiaozhiService != null) {
+        await _xiaozhiService!.disconnect();
+      }
+      
+      // 停止自动拍照
+      _stopAutoPhoto();
+      
+      setState(() {});
+    } catch (e) {
+      debugPrint('断开实验连接失败: $e');
+    }
+  }
+
+  // 重新连接实验
+  void _reconnectToExperiment() async {
+    try {
+      if (_xiaozhiService != null) {
+        await _xiaozhiService!.connect();
+        
+        // 重新启动自动监听
+        if (_isVoiceInputMode) {
+          _maybeStartAutoListening();
+        }
+        
+        setState(() {});
+        _showCustomSnackbar('重新连接成功');
+      }
+    } catch (e) {
+      _showCustomSnackbar('重新连接失败: $e');
+    }
+  }
+
+  // ========== 实验控制相关方法结束 ==========
 
   // 查找最近一条用户文本消息（对象）
   Message? _getLastUserTextMessage() {
