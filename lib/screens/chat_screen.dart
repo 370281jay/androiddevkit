@@ -484,12 +484,12 @@ from(bucket: "vitals_data")
     if (_selectedExperiment == null) return const SizedBox.shrink();
 
     final steps = _selectedExperiment!.steps;
-    const double itemHeight = 46.0;
-    final double containerHeight = itemHeight * 3 + 24; // 固定高度
+    const double itemHeight = 38.0; // 从46.0减少到38.0
+    final double containerHeight = itemHeight * 3 + 16; // 从24减少到16
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), // 减少垂直边距
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), // 减少内边距
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -508,19 +508,22 @@ from(bucket: "vitals_data")
           Row(
             children: [
               Expanded(
-                child: Text(
-                  _selectedExperiment!.name,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
+                child: Container(
+                  padding: const EdgeInsets.only(top: 1, bottom: 2), // 减少标题内边距
+                  child: Text(
+                    _selectedExperiment!.name,
+                    style: const TextStyle(
+                      fontSize: 12, // 从13减少到12
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.close, size: 18),
+                icon: const Icon(Icons.close, size: 16), // 从18减少到16
                 onPressed: () {
                   setState(() {
                     _selectedExperiment = null;
@@ -530,26 +533,27 @@ from(bucket: "vitals_data")
                 },
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                splashRadius: 16,
+                splashRadius: 14, // 从16减少到14
               ),
             ],
           ),
-          const SizedBox(height: 8),
+
+          const SizedBox(height: 4), // 从8减少到4
 
           // 列表 + 滚动条提示（固定高度）
           SizedBox(
             height: containerHeight,
             child: Scrollbar(
               controller: _stepsScrollController,
-              thumbVisibility: true, // 始终显示滚动条拇指以提示可滚动
+              thumbVisibility: true,
               trackVisibility: true,
-              thickness: 4,
-              radius: const Radius.circular(6),
+              thickness: 3, // 从4减少到3
+              radius: const Radius.circular(4), // 从6减少到4
               child: ListView.separated(
                 controller: _stepsScrollController,
                 physics: const BouncingScrollPhysics(),
                 itemCount: steps.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 6),
+                separatorBuilder: (_, __) => const SizedBox(height: 4), // 从6减少到4
                 padding: EdgeInsets.zero,
                 itemBuilder: (context, index) {
                   final step = steps[index];
@@ -562,9 +566,7 @@ from(bucket: "vitals_data")
                       GestureDetector(
                         onTap: () {
                           setState(() {
-                            // 同步当前步骤索引，用于高亮
                             _currentStepIndex = index;
-                            // 就地展开/折叠
                             _expandedStepIndex = isActive ? null : index;
                             _showStepDetails = _expandedStepIndex != null;
                           });
@@ -572,13 +574,13 @@ from(bucket: "vitals_data")
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 220),
                           height: itemHeight,
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 8), // 从12减少到8
                           decoration: BoxDecoration(
                             color:
                                 isActive
                                     ? Colors.blue.shade50
                                     : Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(8), // 从10减少到8
                             border: Border.all(
                               color:
                                   isActive
@@ -590,8 +592,8 @@ from(bucket: "vitals_data")
                           child: Row(
                             children: [
                               Container(
-                                width: 30,
-                                height: 30,
+                                width: 24, // 从30减少到24
+                                height: 24, // 从30减少到24
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   color:
@@ -605,17 +607,17 @@ from(bucket: "vitals_data")
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
-                                      fontSize: 13,
+                                      fontSize: 11, // 从13减少到11
                                     ),
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 8), // 从12减少到8
                               Expanded(
                                 child: Text(
                                   step.name,
                                   style: TextStyle(
-                                    fontSize: 13,
+                                    fontSize: 12, // 从13减少到12
                                     fontWeight: FontWeight.w600,
                                     color:
                                         isActive
@@ -634,26 +636,26 @@ from(bucket: "vitals_data")
                                     isActive
                                         ? Colors.blue
                                         : Colors.grey.shade500,
-                                size: 20,
+                                size: 18, // 从20减少到18
                               ),
                             ],
                           ),
                         ),
                       ),
 
-                      // 就地展开的说明（在该步骤下方显示）
+                      // 就地展开的说明
                       AnimatedSize(
                         duration: const Duration(milliseconds: 220),
                         curve: Curves.easeInOut,
                         child:
                             isActive
                                 ? Padding(
-                                  padding: const EdgeInsets.only(top: 8),
+                                  padding: const EdgeInsets.only(top: 4), // 从8减少到4
                                   child: Container(
-                                    padding: const EdgeInsets.all(12),
+                                    padding: const EdgeInsets.all(8), // 从12减少到8
                                     decoration: BoxDecoration(
                                       color: Colors.blue.shade50,
-                                      borderRadius: BorderRadius.circular(10),
+                                      borderRadius: BorderRadius.circular(8), // 从10减少到8
                                       border: Border.all(
                                         color: Colors.blue.shade100,
                                       ),
@@ -665,18 +667,18 @@ from(bucket: "vitals_data")
                                         Text(
                                           '${step.index}. ${step.name}',
                                           style: const TextStyle(
-                                            fontSize: 14,
+                                            fontSize: 13, // 从14减少到13
                                             fontWeight: FontWeight.w700,
                                             color: Colors.blue,
                                           ),
                                         ),
-                                        const SizedBox(height: 6),
+                                        const SizedBox(height: 4), // 从6减少到4
                                         Text(
                                           step.instruction,
                                           style: TextStyle(
-                                            fontSize: 13,
+                                            fontSize: 12, // 从13减少到12
                                             color: Colors.grey.shade800,
-                                            height: 1.5,
+                                            height: 1.4, // 从1.5减少到1.4
                                           ),
                                         ),
                                       ],
@@ -691,9 +693,6 @@ from(bucket: "vitals_data")
               ),
             ),
           ),
-
-          // 移除底部统一详情块（不再在最下方弹出）
-          // ...已删除原先的 if (_showStepDetails ...) 底部说明...
         ],
       ),
     );
@@ -772,9 +771,7 @@ from(bucket: "vitals_data")
         int maxDelayMs = 30000; // 最多等待30秒
         int finalDelayMs = estimatedDelayMs.clamp(2000, maxDelayMs);
 
-        debugPrint(
-          '文本长度: $textLength, 估计播报时延: ${finalDelayMs}ms',
-        );
+        debugPrint('文本长度: $textLength, 估计播报时延: ${finalDelayMs}ms');
 
         // 每次收到助手文本都重置防抖；在估计的时延内若无新的文本则认定播报结束
         _ttsDebounceTimer?.cancel();
@@ -1344,7 +1341,7 @@ from(bucket: "vitals_data")
                           ],
                         ),
                       ),
-                      
+
                       // 实验控制面板（底部悬浮）
                       Positioned(
                         bottom: 60,
@@ -2825,7 +2822,7 @@ from(bucket: "vitals_data")
   }
 
   // ========== 实验控制相关方法 ==========
-  
+
   // 暂停实验
   void _pauseExperiment() async {
     if (_selectedExperiment == null) return;
@@ -2856,7 +2853,7 @@ from(bucket: "vitals_data")
     if (shouldEnd == true) {
       // 结束实验并断开连接
       await _disconnectExperiment();
-      
+
       // 标记实验已结束，但保留实验信息以便查看报告
       setState(() {
         _experimentEnded = true;
@@ -2881,15 +2878,15 @@ from(bucket: "vitals_data")
     try {
       // 停止自动监听
       await _stopAutoListening();
-      
+
       // 断开WebSocket连接
       if (_xiaozhiService != null) {
         await _xiaozhiService!.disconnect();
       }
-      
+
       // 停止自动拍照
       _stopAutoPhoto();
-      
+
       setState(() {});
     } catch (e) {
       debugPrint('断开实验连接失败: $e');
@@ -2901,12 +2898,12 @@ from(bucket: "vitals_data")
     try {
       if (_xiaozhiService != null) {
         await _xiaozhiService!.connect();
-        
+
         // 重新启动自动监听
         if (_isVoiceInputMode) {
           _maybeStartAutoListening();
         }
-        
+
         setState(() {});
         _showCustomSnackbar('重新连接成功');
       }
