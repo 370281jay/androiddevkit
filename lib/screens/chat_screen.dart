@@ -346,11 +346,16 @@ from(bucket: "vitals_data")
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: Colors.grey.shade200),
                         ),
-                        child: DropdownButtonFormField<Experiment>(
+                        child: Scrollbar(
+                          thumbVisibility: true, // 始终显示滚动条
+                          trackVisibility: true, // 显示滚动轨道
+                          thickness: 6, // 滚动条宽度
+                          radius: const Radius.circular(3), // 滚动条圆角
+                          child: DropdownButtonFormField<Experiment>(
                           value: tempSelected,
                           isExpanded: true,
                           itemHeight: null, // 菜单项允许自适应多行高度
-                          menuMaxHeight: 400,
+                          menuMaxHeight: MediaQuery.of(context).size.height * 0.6, // 最大高度为屏幕高度的60%
                           // 关键：为“按钮区”提供单行展示，避免使用多行 Column 造成溢出
                           selectedItemBuilder: (context) {
                             return experiments.map((exp) {
@@ -416,6 +421,7 @@ from(bucket: "vitals_data")
                             size: 22,
                           ),
                         ),
+                      ),
                       ),
                     ),
                     const SizedBox(height: 20),
