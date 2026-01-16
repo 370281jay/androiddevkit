@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:ai_assistant/models/experiment.dart';
-import 'package:ai_assistant/widgets/pdf_view_screen.dart';
+import 'package:ai_assistant/screens/experiment_report_screen.dart';
 
 class ExperimentDialogs {
   /// 显示暂停实验对话框
@@ -122,12 +122,12 @@ class ExperimentDialogs {
     );
   }
 
-  /// 显示实验报告对话框
-  static void showReportDialog(
+  /// 查看实验报告对话框
+  static Future<void> showReportDialog(
     BuildContext context,
     Experiment experiment,
   ) {
-    showDialog(
+    return showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(
@@ -135,7 +135,7 @@ class ExperimentDialogs {
         ),
         title: Row(
           children: [
-            Icon(Icons.description, color: Colors.green, size: 28),
+            Icon(Icons.assessment, color: Colors.green, size: 28),
             const SizedBox(width: 12),
             const Text('实验报告'),
           ],
@@ -153,21 +153,21 @@ class ExperimentDialogs {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.green.shade200),
               ),
-              child: Column(
+              child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '📄 报告内容包括：',
+                  Text(
+                    '📄 报告功能包括：',
                     style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                   ),
-                  const SizedBox(height: 8),
-                  const Text('• 实验步骤记录', style: TextStyle(fontSize: 13)),
-                  const SizedBox(height: 2),
-                  const Text('• 体征数据分析', style: TextStyle(fontSize: 13)),
-                  const SizedBox(height: 2),
-                  const Text('• 图片采集结果', style: TextStyle(fontSize: 13)),
-                  const SizedBox(height: 2),
-                  const Text('• 对话交互日志', style: TextStyle(fontSize: 13)),
+                  SizedBox(height: 8),
+                  Text('• PDF格式在线预览', style: TextStyle(fontSize: 13)),
+                  SizedBox(height: 2),
+                  Text('• DOCX格式邮件发送', style: TextStyle(fontSize: 13)),
+                  SizedBox(height: 2),
+                  Text('• 实验步骤记录', style: TextStyle(fontSize: 13)),
+                  SizedBox(height: 2),
+                  Text('• 体征数据分析', style: TextStyle(fontSize: 13)),
                 ],
               ),
             ),
@@ -181,13 +181,12 @@ class ExperimentDialogs {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              // 打开PDF查看器
+              // 导航到新的报告界面
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => PDFViewScreen(
-                    title: '${experiment.name} - 实验报告',
-                    assetPath: 'lib/static/pdf/test.pdf',
+                  builder: (context) => ExperimentReportScreen(
+                    experiment: experiment,
                   ),
                 ),
               );

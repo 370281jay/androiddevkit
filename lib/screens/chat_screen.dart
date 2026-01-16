@@ -30,6 +30,7 @@ import 'package:ai_assistant/widgets/camerax_right_preview.dart';
 import 'package:ai_assistant/models/experiment.dart';
 import 'package:ai_assistant/widgets/experiment_control_panel.dart';
 import 'package:ai_assistant/widgets/experiment_dialogs.dart';
+import 'package:ai_assistant/screens/experiment_report_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -2876,9 +2877,15 @@ from(bucket: "vitals_data")
   void _viewExperimentReport() async {
     if (_selectedExperiment == null) return;
 
-    ExperimentDialogs.showReportDialog(context, _selectedExperiment!);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ExperimentReportScreen(
+          experiment: _selectedExperiment!,
+        ),
+      ),
+    );
   }
-
   // 断开实验连接
   Future<void> _disconnectExperiment() async {
     try {
